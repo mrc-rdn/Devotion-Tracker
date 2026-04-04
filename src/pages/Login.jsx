@@ -57,24 +57,7 @@ export default function Login({ supabaseError, onRetry }) {
 
       {/* Card */}
       <div className="card">
-        {/* Supabase Connection Error */}
-        {supabaseError && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-            <div className="flex items-start gap-2 mb-2">
-              <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-              <p className="text-sm font-medium text-red-800">Supabase Connection Error</p>
-            </div>
-            <p className="text-xs text-red-700 mb-2">{supabaseError}</p>
-            <button
-              onClick={onRetry}
-              className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800 font-medium"
-            >
-              <RefreshCw className="w-3 h-3" />
-              Retry Connection
-            </button>
-          </div>
-        )}
-
+        
         {/* Login Error */}
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
@@ -143,15 +126,8 @@ export default function Login({ supabaseError, onRetry }) {
         </p>
       </div>
 
-      {/* Dummy Account Info */}
-      <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-        <p className="text-sm font-medium text-blue-900 mb-2">Test Accounts</p>
-        <div className="text-xs text-blue-700 space-y-1">
-          <p><strong>Member:</strong> member@devotion.test / Test1234!</p>
-          <p><strong>Leader:</strong> leader@devotion.test / Test1234!</p>
-          <p><strong>Admin:</strong> admin@devotion.test / Test1234!</p>
-        </div>
-      </div>
+      
+      
     </div>
   );
 }
