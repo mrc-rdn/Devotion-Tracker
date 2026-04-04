@@ -11,15 +11,16 @@ export async function submitDevotion(imageFile, notes = '') {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
-  // 2. Get user's profile for group_id
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('id, group_id')
-    .eq('id', user.id)
+  // 2. Verify user has at least one group membership
+  const { data: membership, error: membershipError } = await supabase
+    .from('group_members')
+    .select('group_id')
+    .eq('user_id', user.id)
+    .limit(1)
     .single();
 
-  if (profileError || !profile) {
-    throw new Error('Failed to load profile');
+  if (membershipError || !membership) {
+    throw new Error('You must join a group before submitting a devotion');
   }
 
   // 3. Upload image if provided
@@ -30,8 +31,7 @@ export async function submitDevotion(imageFile, notes = '') {
 
   // 4. Submit devotion using server-time function
   const { data, error } = await supabase.rpc('submit_devotion', {
-    p_user_id: profile.id,
-    p_group_id: profile.group_id,
+    p_user_id: user.id,
     p_image_url: imageUrl,
     p_notes: notes,
   });
@@ -132,8 +132,27 @@ export async function getDevotionCount(userId, startDate, endDate) {
 
 /**
  * Get all devotions for a group (leader view)
+ * Uses relational joins through group_members instead of devotions.group_id
  */
 export async function getGroupDevotions(groupId, startDate, endDate) {
+  // Step 1: Get all user_ids in this group
+  const { data: members, error: membersError } = await supabase
+    .from('group_members')
+    .select('user_id')
+    .eq('group_id', groupId);
+
+  if (membersError) {
+    console.error('Failed to fetch group members:', membersError.message);
+    return [];
+  }
+
+  if (!members || members.length === 0) {
+    return [];
+  }
+
+  const userIds = members.map(m => m.user_id);
+
+  // Step 2: Fetch devotions for those users
   const { data, error } = await supabase
     .from('devotions')
     .select(`
@@ -145,7 +164,7 @@ export async function getGroupDevotions(groupId, startDate, endDate) {
       user_id,
       profiles!inner (first_name, last_name)
     `)
-    .eq('group_id', groupId)
+    .in('user_id', userIds)
     .gte('devotion_date', formatDateISO(startDate))
     .lte('devotion_date', formatDateISO(endDate))
     .order('devotion_date', { ascending: false });
@@ -163,8 +182,11 @@ export async function getGroupDevotions(groupId, startDate, endDate) {
  */
 export async function getDevotionStats(userId) {
   const now = new Date();
+  // Monday to Sunday (Monday = 1, Sunday = 0)
+  const dayOfWeek = now.getDay();
+  const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
   const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - now.getDay());
+  weekStart.setDate(now.getDate() - daysSinceMonday);
 
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const yearStart = new Date(now.getFullYear(), 0, 1);
@@ -188,13 +210,17 @@ export async function getDevotionStats(userId) {
  * Get leaderboard for a group (dummy data fallback)
  */
 export async function getLeaderboard(groupId) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, first_name, last_name')
+  // Get group members from group_members table
+  const { data: membersData, error: membersError } = await supabase
+    .from('group_members')
+    .select(`
+      user_id,
+      profiles (id, first_name, last_name)
+    `)
     .eq('group_id', groupId);
 
-  if (error) {
-    console.error('Failed to fetch leaderboard:', error.message);
+  if (membersError) {
+    console.error('Failed to fetch leaderboard:', membersError.message);
     return [];
   }
 
@@ -203,10 +229,12 @@ export async function getLeaderboard(groupId) {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const members = await Promise.all(
-    (data || []).map(async (member) => {
-      const count = await getDevotionCount(member.id, monthStart, now);
+    (membersData || []).map(async (member) => {
+      const count = await getDevotionCount(member.profiles.id, monthStart, now);
       return {
-        ...member,
+        id: member.profiles.id,
+        first_name: member.profiles.first_name,
+        last_name: member.profiles.last_name,
         devotionCount: count,
       };
     })

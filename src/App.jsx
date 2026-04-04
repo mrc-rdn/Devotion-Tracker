@@ -13,6 +13,7 @@ import Signup from './pages/Signup';
 // Member Pages
 import MemberDashboard from './pages/MemberDashboard';
 import JoinGroup from './pages/JoinGroup';
+import MyDevotion from './pages/MyDevotion';
 
 // Leader Pages
 import LeaderDashboard from './pages/LeaderDashboard';
@@ -24,6 +25,7 @@ import AdminDashboard from './pages/AdminDashboard';
 
 // Shared Pages
 import Messages from './pages/Messages';
+import Bible from './pages/Bible';
 
 // =============================================
 // Shared Components
@@ -70,7 +72,6 @@ function LoadingScreen({ error, onRetry }) {
 
 /**
  * Redirects authenticated users to their role dashboard.
- * Shows a loading spinner while profile data is being fetched.
  */
 function RedirectIfAuthenticated({ children }) {
   const { user, profile, loading } = useAuth();
@@ -168,8 +169,10 @@ export default function App() {
       >
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<MemberDashboard />} />
+        <Route path="devotion" element={<MyDevotion />} />
         <Route path="group" element={<JoinGroup />} />
         <Route path="messages" element={<Messages />} />
+        <Route path="bible" element={<Bible />} />
       </Route>
 
       {/* Protected Leader Routes */}
@@ -183,11 +186,16 @@ export default function App() {
       >
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<LeaderDashboard />} />
+        <Route path="devotion" element={<MyDevotion />} />
         <Route path="group" element={<ManageGroup />} />
         <Route path="messages" element={<Messages />} />
+        <Route path="bible" element={<Bible />} />
       </Route>
 
-      {/* Leader Group Detail — Standalone Page (no DashboardLayout) */}
+      {/*
+         IMPORTANT: This route is OUTSIDE the DashboardLayout block.
+         It renders GroupDetail as a standalone page with its own sidebar.
+      */}
       <Route
         path="leader/group/:groupId"
         element={
@@ -207,8 +215,10 @@ export default function App() {
         }
       >
         <Route index element={<Navigate to="dashboard" replace />} />
+        <Route path="devotion" element={<MyDevotion />} />
         <Route path="dashboard" element={<AdminDashboard />} />
         <Route path="messages" element={<Messages />} />
+        <Route path="bible" element={<Bible />} />
       </Route>
 
       {/* 404 */}

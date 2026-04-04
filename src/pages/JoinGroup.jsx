@@ -1,25 +1,35 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, Users, CheckCircle, AlertCircle, LogOut, Loader2, Crown, ChevronRight, X } from 'lucide-react';
+import { Search, Users, CheckCircle, AlertCircle, LogOut, Loader2, Crown, ChevronRight, X, ArrowRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { Card, CardHeader, Button, Badge, EmptyState } from '../components/ui';
+import { Card, CardHeader, Button, Badge } from '../components/ui';
 import { useDebounce } from '../hooks/useDebounce';
 import {
   searchGroups,
   joinGroup,
   leaveGroup,
   getGroupLeaders,
+  getUserGroups,
 } from '../services/groups.service';
 
 export default function JoinGroup() {
-  const { profile, updateProfile } = useAuth();
+  const { user } = useAuth();
+  
+  // My Groups State
+  const [myGroups, setMyGroups] = useState([]);
+  const [loadingMyGroups, setLoadingMyGroups] = useState(true);
+
+  // Search State
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
-  const [joining, setJoining] = useState(false);
-  const [leaving, setLeaving] = useState(false);
+  
+  // Action State
+  const [joining, setJoining] = useState(null); // Stores groupId being joined
+  const [leaving, setLeaving] = useState(null); // Stores groupId being left
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [groupLeaders, setGroupLeaders] = useState([]);
+
+  // Dropdown UI State
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
 
@@ -28,11 +38,25 @@ export default function JoinGroup() {
   const dropdownRef = useRef(null);
   const searchIdRef = useRef(0);
 
-  const isInGroup = !!profile?.group_id;
-
-  // Live search: fires when debounced query changes
+  // Fetch user's groups on mount
   useEffect(() => {
-    // Only search if query is long enough
+    async function loadMyGroups() {
+      if (!user?.id) return;
+      setLoadingMyGroups(true);
+      try {
+        const groups = await getUserGroups(user.id);
+        setMyGroups(groups);
+      } catch (err) {
+        console.error('Failed to load user groups:', err);
+      } finally {
+        setLoadingMyGroups(false);
+      }
+    }
+    loadMyGroups();
+  }, [user?.id]);
+
+  // Live search
+  useEffect(() => {
     if (debouncedQuery.length < 2) {
       setSearchResults([]);
       setDropdownOpen(false);
@@ -45,22 +69,19 @@ export default function JoinGroup() {
 
       try {
         const results = await searchGroups(debouncedQuery);
+        
+        // Filter out groups the user is already in
+        const myGroupIds = new Set(myGroups.map(g => g.id));
+        const filteredResults = results.filter(g => !myGroupIds.has(g.id));
 
-        // Only update if this is still the latest search
         if (searchIdRef.current === currentSearchId) {
-          setSearchResults(results);
+          setSearchResults(filteredResults);
           setDropdownOpen(true);
           setHighlightedIndex(-1);
-
-          if (results.length === 0) {
-            setError('No groups found');
-          } else {
-            setError('');
-          }
         }
       } catch (err) {
         if (searchIdRef.current === currentSearchId) {
-          setError('Failed to search groups');
+          console.error('Search failed:', err);
           setSearchResults([]);
           setDropdownOpen(false);
         }
@@ -72,9 +93,9 @@ export default function JoinGroup() {
     }
 
     performSearch();
-  }, [debouncedQuery]);
+  }, [debouncedQuery, myGroups]);
 
-  // Close dropdown when clicking outside
+  // Close dropdown on outside click
   useEffect(() => {
     function handleClickOutside(e) {
       if (
@@ -91,7 +112,6 @@ export default function JoinGroup() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Highlight a suggestion
   const handleSelectSuggestion = useCallback((group) => {
     setSearchQuery(group.name);
     setSearchResults([]);
@@ -103,8 +123,10 @@ export default function JoinGroup() {
   function handleKeyDown(e) {
     if (!dropdownOpen || searchResults.length === 0) {
       if (e.key === 'Enter' && searchQuery.length >= 2) {
-        // Submit search
         e.preventDefault();
+        if (searchResults.length > 0) {
+          handleSelectSuggestion(searchResults[0]);
+        }
       }
       return;
     }
@@ -116,26 +138,22 @@ export default function JoinGroup() {
           prev < searchResults.length - 1 ? prev + 1 : 0
         );
         break;
-
       case 'ArrowUp':
         e.preventDefault();
         setHighlightedIndex((prev) =>
           prev > 0 ? prev - 1 : searchResults.length - 1
         );
         break;
-
       case 'Enter':
         e.preventDefault();
         if (highlightedIndex >= 0 && highlightedIndex < searchResults.length) {
           handleSelectSuggestion(searchResults[highlightedIndex]);
         }
         break;
-
       case 'Escape':
         setDropdownOpen(false);
         setHighlightedIndex(-1);
         break;
-
       default:
         break;
     }
@@ -143,91 +161,62 @@ export default function JoinGroup() {
 
   // Join a group
   async function handleJoin(groupId) {
-    setJoining(true);
+    setJoining(groupId);
     setError('');
     setSuccess('');
     setDropdownOpen(false);
 
     try {
       await joinGroup(groupId);
-
-      // Refresh profile
-      const { supabase } = await import('../lib/supabase');
-      const { data: updatedProfile } = await supabase
-        .from('profiles')
-        .select('*, groups(name)')
-        .eq('id', profile.id)
-        .single();
-
-      if (updatedProfile) {
-        await updateProfile({});
-      }
-
       setSuccess('Successfully joined the group!');
       setSearchQuery('');
       setSearchResults([]);
+      
+      // Refresh my groups list
+      if (user?.id) {
+        const groups = await getUserGroups(user.id);
+        setMyGroups(groups);
+      }
     } catch (err) {
       setError(err.message || 'Failed to join group');
     } finally {
-      setJoining(false);
+      setJoining(null);
     }
   }
 
-  // Leave current group
-  async function handleLeave() {
-    if (!confirm('Are you sure you want to leave your group?')) return;
+  // Leave a group
+  async function handleLeave(groupId) {
+    if (!confirm('Are you sure you want to leave this group?')) return;
 
-    setLeaving(true);
+    setLeaving(groupId);
     setError('');
     setSuccess('');
 
     try {
-      await leaveGroup();
-      await updateProfile({});
+      await leaveGroup(groupId);
       setSuccess('You have left the group.');
-      setGroupLeaders([]);
+      
+      // Refresh my groups list
+      if (user?.id) {
+        const groups = await getUserGroups(user.id);
+        setMyGroups(groups);
+      }
     } catch (err) {
       setError(err.message || 'Failed to leave group');
     } finally {
-      setLeaving(false);
+      setLeaving(null);
     }
   }
 
-  // Load current group leaders
-  async function loadGroupLeaders() {
-    if (!profile?.group_id) return;
-
-    try {
-      const leaders = await getGroupLeaders(profile.group_id);
-      setGroupLeaders(leaders);
-    } catch (err) {
-      console.error('Failed to load group leaders:', err);
-    }
-  }
-
-  // Load leaders on mount
-  useEffect(() => {
-    if (profile?.group_id) {
-      loadGroupLeaders();
-    }
-  }, [profile?.group_id]);
-
-  // Scroll highlighted item into view
-  useEffect(() => {
-    if (highlightedIndex >= 0) {
-      const item = document.getElementById(`suggestion-${highlightedIndex}`);
-      item?.scrollIntoView({ block: 'nearest' });
-    }
-  }, [highlightedIndex]);
+  // Check if a group is already joined (for search results highlighting if needed)
+  const isJoined = (groupId) => myGroups.some(g => g.id === groupId);
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Groups</h1>
-        <p className="text-gray-500 mt-1">
-          {isInGroup ? 'Manage your group membership' : 'Find and join a group'}
-        </p>
+        <h1 className="text-2xl font-bold text-gray-900">My Groups</h1>
+        <p className="text-gray-500 mt-1">Manage your group memberships and find new groups</p>
       </div>
 
       {/* Success/Error */}
@@ -245,214 +234,175 @@ export default function JoinGroup() {
         </div>
       )}
 
-      {/* Current Group Info */}
-      {isInGroup && (
-        <Card>
-          <CardHeader
-            title="Your Group"
-            subtitle={profile?.groups?.name || 'Loading...'}
-            action={
-              <Button
-                variant="secondary"
-                loading={leaving}
-                onClick={handleLeave}
-              >
-                <LogOut className="w-4 h-4 mr-2" />
-                Leave Group
-              </Button>
-            }
-          />
-
-          <div className="space-y-4">
-            <div className="p-4 bg-primary-50 rounded-lg">
-              <p className="font-semibold text-primary-900">{profile?.groups?.name}</p>
-              <Badge color="green">Member</Badge>
-            </div>
-
-            <div>
-              <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                <Crown className="w-4 h-4" />
-                Group Leader{groupLeaders.length > 1 ? 's' : ''}
-              </h4>
-              {groupLeaders.length > 0 ? (
-                <div className="space-y-2">
-                  {groupLeaders.map((leader) => (
-                    <div
-                      key={leader.id}
-                      className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg"
-                    >
-                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-sm font-semibold text-blue-700">
-                        {leader.first_name[0]}
-                        {leader.last_name[0]}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {leader.first_name} {leader.last_name}
-                        </p>
-                        <p className="text-xs text-gray-500">{leader.email}</p>
-                      </div>
-                      <Badge color="blue">Leader</Badge>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-500">No leaders assigned yet</p>
-              )}
-            </div>
+      {/* My Groups List */}
+      <Card>
+        <CardHeader
+          title="Groups You've Joined"
+          subtitle={`${myGroups.length} group${myGroups.length !== 1 ? 's' : ''}`}
+        />
+        
+        {loadingMyGroups ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
           </div>
-        </Card>
-      )}
-
-      {/* Live Search & Join Group */}
-      {!isInGroup && (
-        <Card>
-          <CardHeader
-            title="Find a Group"
-            subtitle="Start typing to search groups by name"
-          />
-
-          {/* Search Input with Dropdown */}
-          <div className="relative" ref={dropdownRef}>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                ref={inputRef}
-                type="text"
-                placeholder="Search groups..."
-                className="input-field pl-9 pr-10"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onFocus={() => {
-                  if (searchResults.length > 0 && searchQuery.length >= 2) {
-                    setDropdownOpen(true);
-                  }
-                }}
-                autoComplete="off"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery('');
-                    setSearchResults([]);
-                    setDropdownOpen(false);
-                    setError('');
-                  }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-gray-200 transition-colors"
+        ) : myGroups.length === 0 ? (
+          <div className="text-center py-8">
+            <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-500">You haven't joined any groups yet.</p>
+            <p className="text-sm text-gray-400 mt-1">Search below to find a group!</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {myGroups.map((group) => (
+              <div
+                key={group.id}
+                className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100 hover:border-gray-200 transition-colors"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center text-primary-700 font-bold">
+                    {group.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{group.name}</p>
+                    <Badge color={group.role === 'leader' ? 'blue' : 'green'}>
+                      {group.role === 'leader' ? 'Leader' : 'Member'}
+                    </Badge>
+                  </div>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={leaving === group.id}
+                  onClick={() => handleLeave(group.id)}
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
                 >
-                  <X className="w-4 h-4 text-gray-400" />
-                </button>
-              )}
-            </div>
-
-            {/* Dropdown */}
-            {dropdownOpen && searchQuery.length >= 2 && (
-              <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
-                {/* Loading State */}
-                {searching && (
-                  <div className="flex items-center gap-2 px-4 py-3 text-sm text-gray-500">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Searching groups...
-                  </div>
-                )}
-
-                {/* No Results */}
-                {!searching && searchResults.length === 0 && searchQuery.length >= 2 && (
-                  <div className="px-4 py-8 text-center">
-                    <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                    <p className="text-sm font-medium text-gray-900">No groups found</p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      No groups match &quot;{searchQuery}&quot;
-                    </p>
-                  </div>
-                )}
-
-                {/* Suggestions List */}
-                {!searching && searchResults.length > 0 && (
-                  <ul className="max-h-80 overflow-y-auto scrollbar-thin">
-                    {searchResults.map((group, index) => {
-                      const isHighlighted = index === highlightedIndex;
-                      return (
-                        <li key={group.id}>
-                          <button
-                            id={`suggestion-${index}`}
-                            type="button"
-                            onClick={() => handleSelectSuggestion(group)}
-                            onMouseEnter={() => setHighlightedIndex(index)}
-                            className={`w-full text-left px-4 py-4 transition-colors border-b border-gray-100 last:border-0 ${
-                              isHighlighted
-                                ? 'bg-primary-50 border-l-4 border-primary-500'
-                                : 'hover:bg-gray-50 border-l-4 border-transparent'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex-1">
-                                {/* Group Name */}
-                                <p className="text-sm font-semibold text-gray-900">
-                                  {group.name}
-                                </p>
-
-                                {/* Group Description */}
-                                {group.description && (
-                                  <p className="text-xs text-gray-500 mt-1">{group.description}</p>
-                                )}
-
-                                {/* Group Leaders */}
-                                {group.leaders && group.leaders.length > 0 && (
-                                  <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                                    <Crown className="w-3.5 h-3.5 text-yellow-500" />
-                                    <span className="text-xs text-gray-600 font-medium">
-                                      Leader{group.leaders.length > 1 ? 's' : ''}:
-                                    </span>
-                                    {group.leaders.map((leader, idx) => (
-                                      <span key={leader.id} className="text-xs text-gray-700">
-                                        {leader.first_name} {leader.last_name}
-                                        {idx < group.leaders.length - 1 && ', '}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-
-                                {/* No Leaders */}
-                                {(!group.leaders || group.leaders.length === 0) && (
-                                  <p className="text-xs text-gray-400 mt-2">
-                                    No leaders assigned yet
-                                  </p>
-                                )}
-                              </div>
-
-                              {/* Join Icon */}
-                              <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
-                            </div>
-                          </button>
-                        </li>
-                      );
-                    })}
-
-                    {/* Footer */}
-                    <li className="px-4 py-2 bg-gray-50 border-t border-gray-100">
-                      <p className="text-xs text-gray-400 text-center">
-                        {searchResults.length} group{searchResults.length !== 1 ? 's' : ''} found — click to join
-                      </p>
-                    </li>
-                  </ul>
-                )}
+                  <LogOut className="w-4 h-4 mr-1" />
+                  Leave
+                </Button>
               </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Find New Groups */}
+      <Card>
+        <CardHeader
+          title="Find a New Group"
+          subtitle="Search for groups to join"
+        />
+
+        <div className="relative" ref={dropdownRef}>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder="Search groups by name..."
+              className="input-field pl-9 pr-10"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onFocus={() => {
+                if (searchResults.length > 0 && searchQuery.length >= 2) {
+                  setDropdownOpen(true);
+                }
+              }}
+              autoComplete="off"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setSearchResults([]);
+                  setDropdownOpen(false);
+                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-gray-200 transition-colors"
+              >
+                <X className="w-4 h-4 text-gray-400" />
+              </button>
             )}
           </div>
 
-          {/* Hint */}
-          {!searchQuery && (
-            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-xs text-blue-700">
-                <strong>Tip:</strong> Start typing a group name to see suggestions. 
-                Use arrow keys to navigate and Enter to select.
-              </p>
+          {/* Dropdown Results */}
+          {dropdownOpen && searchQuery.length >= 2 && (
+            <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+              {searching ? (
+                <div className="flex items-center gap-2 px-4 py-3 text-sm text-gray-500">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Searching groups...
+                </div>
+              ) : searchResults.length === 0 ? (
+                <div className="px-4 py-8 text-center">
+                  <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm font-medium text-gray-900">No new groups found</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    You may have already joined matching groups.
+                  </p>
+                </div>
+              ) : (
+                <ul className="max-h-80 overflow-y-auto scrollbar-thin">
+                  {searchResults.map((group, index) => {
+                    const isHighlighted = index === highlightedIndex;
+                    return (
+                      <li key={group.id}>
+                        <button
+                          id={`suggestion-${index}`}
+                          type="button"
+                          onClick={() => handleSelectSuggestion(group)}
+                          onMouseEnter={() => setHighlightedIndex(index)}
+                          disabled={joining === group.id}
+                          className={`w-full text-left px-4 py-4 transition-colors border-b border-gray-100 last:border-0 ${
+                            isHighlighted
+                              ? 'bg-primary-50 border-l-4 border-primary-500'
+                              : 'hover:bg-gray-50 border-l-4 border-transparent'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <p className="text-sm font-semibold text-gray-900">{group.name}</p>
+                              {group.description && (
+                                <p className="text-xs text-gray-500 mt-1">{group.description}</p>
+                              )}
+                              {group.leaders?.length > 0 && (
+                                <div className="flex items-center gap-1 mt-2">
+                                  <Crown className="w-3 h-3 text-yellow-500" />
+                                  <span className="text-xs text-gray-500">
+                                    Led by {group.leaders.map(l => l.first_name).join(', ')}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            <div className="ml-4">
+                              {joining === group.id ? (
+                                <Loader2 className="w-5 h-5 animate-spin text-primary-600" />
+                              ) : (
+                                <ArrowRight className="w-5 h-5 text-gray-400" />
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                  <li className="px-4 py-2 bg-gray-50 text-xs text-gray-500 text-center">
+                    {searchResults.length} group{searchResults.length !== 1 ? 's' : ''} found — click to join
+                  </li>
+                </ul>
+              )}
             </div>
           )}
-        </Card>
-      )}
+        </div>
+        
+        {!searchQuery && (
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-xs text-blue-700">
+              <strong>Tip:</strong> You can join multiple groups! Search by name to find new communities.
+            </p>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

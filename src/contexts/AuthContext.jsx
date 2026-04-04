@@ -23,24 +23,59 @@ export function AuthProvider({ children }) {
   async function fetchProfile(userId) {
     console.log('🔍 AuthContext: Fetching profile for user:', userId);
     try {
-      const { data, error } = await supabase
+      // Fetch profile data
+      const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('*, groups(name)')
+        .select('*')
         .eq('id', userId)
         .single();
 
-      if (error) {
-        console.error('❌ AuthContext: Failed to fetch profile:', error.message);
+      if (profileError) {
+        console.error('❌ AuthContext: Failed to fetch profile:', profileError.message);
         return null;
       }
 
+      // Fetch user's groups via group_members
+      const { data: groupMemberships, error: groupsError } = await supabase
+        .from('group_members')
+        .select(`
+          group_id,
+          role,
+          groups (
+            id,
+            name,
+            description
+          )
+        `)
+        .eq('user_id', userId)
+        .order('joined_at', { ascending: false });
+
+      if (groupsError) {
+        console.error('❌ AuthContext: Failed to fetch group memberships:', groupsError.message);
+      }
+
+      // Build groups array and get primary group (first one)
+      const groups = (groupMemberships || []).map(m => m.groups).filter(Boolean);
+      const primaryGroup = groups[0] || null;
+      const primaryGroupMembership = groupMemberships?.[0] || null;
+
       console.log('✅ AuthContext: Profile fetched successfully:', {
-        id: data.id,
-        role: data.role,
-        groupId: data.group_id,
-        groupName: data.groups?.name,
+        id: profileData.id,
+        role: profileData.role,
+        groups: groups.length,
+        primaryGroup: primaryGroup?.name,
       });
-      return data;
+
+      // Return profile with groups array and legacy groupId/groupName for backward compatibility
+      return {
+        ...profileData,
+        groups: primaryGroup, // Keep for backward compatibility with existing code
+        userGroups: groups, // New: array of all user's groups
+        userMemberships: groupMemberships || [], // New: full membership data
+        groupId: primaryGroup?.id || null, // Legacy: primary group ID
+        groupName: primaryGroup?.name || null, // Legacy: primary group name
+        memberRole: primaryGroupMembership?.role || null, // User's role in primary group
+      };
     } catch (err) {
       console.error('❌ AuthContext: Profile fetch exception:', err);
       return null;

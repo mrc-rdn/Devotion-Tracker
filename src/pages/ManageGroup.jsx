@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Users, CheckCircle, AlertCircle, X, UserPlus, Eye } from 'lucide-react';
+import { Plus, Users, CheckCircle, AlertCircle, X, UserPlus, Eye, Crown, Search } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardHeader, Button, Badge, Modal } from '../components/ui';
 import {
   createGroup,
   getAvailableLeaders,
   addCoLeader,
-  removeCoLeader,
+  removeMember,
   getGroupLeaders,
   getLeaderGroups,
 } from '../services/groups.service';
@@ -35,6 +35,9 @@ export default function ManageGroup() {
   const [availableLeaders, setAvailableLeaders] = useState([]);
   const [currentLeaders, setCurrentLeaders] = useState([]);
   const [loadingLeaders, setLoadingLeaders] = useState(false);
+  
+  // Search state for Add Leader Modal
+  const [leaderSearch, setLeaderSearch] = useState('');
 
   const isLeader = profile?.role === 'leader';
 
@@ -42,11 +45,15 @@ export default function ManageGroup() {
   useEffect(() => {
     async function loadLeaderGroups() {
       if (!user?.id) return;
-      const groups = await getLeaderGroups(user.id);
-      setLeaderGroups(groups);
-      // Auto-select the first group or keep current selection
-      if (groups.length > 0 && !selectedGroupId) {
-        setSelectedGroupId(groups[0].id);
+      try {
+        const groups = await getLeaderGroups(user.id);
+        setLeaderGroups(groups);
+        // Auto-select the first group or keep current selection
+        if (groups.length > 0 && !selectedGroupId) {
+          setSelectedGroupId(groups[0].id);
+        }
+      } catch (err) {
+        console.error('Failed to load leader groups:', err);
       }
     }
     loadLeaderGroups();
@@ -64,6 +71,7 @@ export default function ManageGroup() {
   async function loadLeaders(groupId) {
     if (!groupId) return;
     try {
+      // Fetches ALL leaders (including the creator)
       const leaders = await getGroupLeaders(groupId);
       setCurrentLeaders(leaders);
     } catch (err) {
@@ -87,6 +95,7 @@ export default function ManageGroup() {
   // Open add leader modal
   function handleOpenAddLeader() {
     setShowAddLeader(true);
+    setLeaderSearch(''); // Reset search
     loadAvailableLeaders();
   }
 
@@ -97,19 +106,24 @@ export default function ManageGroup() {
     try {
       await addCoLeader(selectedGroupId, leaderId);
       loadLeaders(selectedGroupId);
-      loadAvailableLeaders();
+      // Refresh available leaders list to update status
+      loadAvailableLeaders(); 
     } catch (err) {
       setError(err.message);
     }
   }
 
-  // Remove a co-leader
+  // Remove a leader
   async function handleRemoveLeader(leaderId) {
     if (!selectedGroupId) return;
-    if (!confirm('Remove this co-leader from the group?')) return;
+    if (leaderId === user.id) {
+      setError('You cannot remove yourself from the group.');
+      return;
+    }
+    if (!confirm('Remove this leader from the group?')) return;
 
     try {
-      await removeCoLeader(selectedGroupId, leaderId);
+      await removeMember(selectedGroupId, leaderId);
       loadLeaders(selectedGroupId);
       loadAvailableLeaders();
     } catch (err) {
@@ -127,28 +141,23 @@ export default function ManageGroup() {
     setSuccess('');
 
     try {
-      console.log('🔹 Step 1: Creating group with name:', groupName.trim());
-
-      // 1. Create the group (trigger auto-assigns leader)
+      // 1. Create the group (service adds creator as leader automatically)
       const group = await createGroup(groupName.trim(), description.trim());
-      console.log('✅ Group created:', group);
 
       // 2. Refresh leader groups list
       const groups = await getLeaderGroups(user.id);
       setLeaderGroups(groups);
       setSelectedGroupId(group.id);
 
-      setSuccess(`Group "${group.name}" created successfully! You are now the group leader.`);
+      setSuccess(`Group "${group.name}" created successfully!`);
       setGroupName('');
       setDescription('');
-      setShowCreateModal(false); // Close modal
+      setShowCreateModal(false);
 
       // Load leaders for this group
       loadLeaders(group.id);
-
-      console.log('✅ All steps completed successfully!');
     } catch (err) {
-      console.error('❌ Group creation error:', err);
+      console.error('Group creation error:', err);
       setError(err.message || 'Failed to create group');
     } finally {
       setCreating(false);
@@ -162,6 +171,13 @@ export default function ManageGroup() {
     setDescription('');
     setError('');
   }
+
+  // Filter available leaders based on search
+  const filteredAvailableLeaders = availableLeaders.filter(
+    (l) =>
+      `${l.first_name} ${l.last_name}`.toLowerCase().includes(leaderSearch.toLowerCase()) ||
+      l.email?.toLowerCase().includes(leaderSearch.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
@@ -296,9 +312,8 @@ export default function ManageGroup() {
                       }}
                     >
                       <Eye className="w-4 h-4 mr-1" />
-                      View
+                      View Details
                     </Button>
-                    
                   </div>
                 </div>
               );
@@ -316,7 +331,7 @@ export default function ManageGroup() {
             action={
               <Button variant="secondary" onClick={handleOpenAddLeader}>
                 <UserPlus className="w-4 h-4 mr-2" />
-                Add Co-Leader
+                Add Leader
               </Button>
             }
           />
@@ -334,63 +349,126 @@ export default function ManageGroup() {
             )}
           </div>
 
-          {/* Co-Leaders */}
+          {/* Leaders List */}
           <div>
             <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-              <Users className="w-4 h-4" />
-              Group Leaders ({currentLeaders.length + 1})
+              <Crown className="w-4 h-4 text-yellow-500" />
+              Group Leaders ({currentLeaders.length})
             </h4>
 
-            {/* Primary leader (current user) */}
-            <div className="flex items-center gap-3 p-3 bg-primary-50 rounded-lg border border-primary-200">
-              <div className="w-10 h-10 bg-primary-600 rounded-full flex items-center justify-center text-sm font-semibold text-white">
-                {(profile?.first_name || '?')[0]}{(profile?.last_name || '?')[0]}
+            {currentLeaders.length > 0 ? (
+              <div className="space-y-2">
+                {currentLeaders.map((leader) => {
+                  const isCurrentUser = leader.id === user.id;
+                  return (
+                    <div
+                      key={leader.id}
+                      className={`flex items-center gap-3 p-3 rounded-lg border ${
+                        isCurrentUser
+                          ? 'bg-primary-50 border-primary-200'
+                          : 'bg-gray-50 border-gray-100'
+                      }`}
+                    >
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold ${
+                        isCurrentUser ? 'bg-primary-600 text-white' : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        {(leader.first_name || '?')[0]}{(leader.last_name || '?')[0]}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900">
+                          {leader.first_name} {leader.last_name} {isCurrentUser && '(You)'}
+                        </p>
+                        <p className="text-xs text-gray-500">{leader.email}</p>
+                      </div>
+                      <Badge color={isCurrentUser ? 'blue' : 'gray'}>
+                        {isCurrentUser ? 'Owner' : 'Leader'}
+                      </Badge>
+                      
+                      {!isCurrentUser && (
+                        <button
+                          onClick={() => handleRemoveLeader(leader.id)}
+                          className="p-1.5 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
+                          title="Remove leader"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-gray-900">
-                  {profile?.first_name} {profile?.last_name}
-                </p>
-                <p className="text-xs text-gray-500">{profile?.email}</p>
+            ) : (
+              <div className="text-center py-8">
+                <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500">No leaders found</p>
               </div>
-              <Badge color="blue">Primary Leader</Badge>
-            </div>
-
-            {/* Co-leaders */}
-            {currentLeaders.map((leader) => (
-              <div
-                key={leader.id}
-                className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg mt-2"
-              >
-                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-sm font-semibold text-blue-700">
-                  {(leader.first_name || '?')[0]}{(leader.last_name || '?')[0]}
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-900">
-                    {leader.first_name} {leader.last_name}
-                  </p>
-                  <p className="text-xs text-gray-500">{leader.email}</p>
-                </div>
-                <Badge color="blue">Co-Leader</Badge>
-                <button
-                  onClick={() => handleRemoveLeader(leader.id)}
-                  className="p-1.5 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
-                  title="Remove co-leader"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
-
-            {currentLeaders.length === 0 && (
-              <p className="text-sm text-gray-400 mt-2 text-center py-4">
-                No co-leaders assigned yet. Add one to share management.
-              </p>
             )}
           </div>
         </Card>
       )}
 
-      
+      {/* Add Leader Modal */}
+      <Modal
+        isOpen={showAddLeader}
+        onClose={() => setShowAddLeader(false)}
+        title="Add Group Leader"
+      >
+        <div className="space-y-4">
+          {/* Search Input */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search leaders by name or email..."
+              className="input-field pl-9"
+              value={leaderSearch}
+              onChange={(e) => setLeaderSearch(e.target.value)}
+              autoFocus
+            />
+          </div>
+          
+          {/* Leaders List */}
+          <div className="max-h-64 overflow-y-auto space-y-2">
+            {loadingLeaders ? (
+              <p className="text-center text-sm text-gray-500 py-4">Loading leaders...</p>
+            ) : filteredAvailableLeaders.length === 0 ? (
+              <p className="text-center text-sm text-gray-500 py-4">
+                {leaderSearch ? 'No leaders match your search' : 'No leaders available to add.'}
+              </p>
+            ) : (
+              filteredAvailableLeaders.map((leader) => (
+                <div
+                  key={leader.id}
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-xs font-semibold text-blue-700">
+                      {(leader.first_name || '?')[0]}{(leader.last_name || '?')[0]}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">
+                        {leader.first_name} {leader.last_name}
+                      </p>
+                      <p className="text-xs text-gray-500">{leader.email}</p>
+                    </div>
+                  </div>
+                  {leader.alreadyAssigned ? (
+                    <Badge color="gray">Added</Badge>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={() => handleAddLeader(leader.id)}
+                    >
+                      Add
+                    </Button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

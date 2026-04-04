@@ -22,8 +22,11 @@ export default function GroupLeaderboard() {
     const now = new Date();
     let startDate;
     if (timeFilter === TIME_FILTERS.WEEKLY) {
+      // Monday to Sunday (Monday = 1, Sunday = 0)
+      const dayOfWeek = now.getDay();
+      const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
       startDate = new Date(now);
-      startDate.setDate(now.getDate() - now.getDay());
+      startDate.setDate(now.getDate() - daysSinceMonday);
     } else if (timeFilter === TIME_FILTERS.MONTHLY) {
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
     } else {
@@ -34,12 +37,12 @@ export default function GroupLeaderboard() {
 
   // Fetch leaderboard
   async function fetchLeaderboard() {
-    if (!profile?.group_id) return;
+    if (!profile?.groupId) return;
 
     setLoading(true);
     try {
       const { startDate, endDate } = getDateRange();
-      const data = await getGroupLeaderboard(profile.group_id, startDate, endDate);
+      const data = await getGroupLeaderboard(profile.groupId, startDate, endDate);
       setLeaderboard(data);
     } catch (err) {
       console.error('Failed to fetch leaderboard:', err);
@@ -50,14 +53,14 @@ export default function GroupLeaderboard() {
 
   // Setup realtime subscription
   useEffect(() => {
-    if (!profile?.group_id) return;
+    if (!profile?.groupId) return;
 
     // Initial fetch
     fetchLeaderboard();
 
     // Subscribe to realtime devotion changes
     channelRef.current = subscribeToGroupDevotions(
-      profile.group_id,
+      profile.groupId,
       () => {
         // Refresh leaderboard when a new devotion is submitted
         fetchLeaderboard();
@@ -67,7 +70,7 @@ export default function GroupLeaderboard() {
     return () => {
       unsubscribeChannel(channelRef.current);
     };
-  }, [profile?.group_id, timeFilter]);
+  }, [profile?.groupId, timeFilter]);
 
   // Re-fetch when time filter changes
   useEffect(() => {

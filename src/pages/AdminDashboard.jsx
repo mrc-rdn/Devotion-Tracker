@@ -55,11 +55,32 @@ export default function AdminDashboard() {
       // Fetch users
       const { data: usersData } = await supabase
         .from('profiles')
-        .select('*, groups(name)')
+        .select('*')
         .order('created_at', { ascending: false })
         .limit(50);
 
-      setUsers(usersData || []);
+      // Fetch group memberships for each user
+      const usersWithGroups = await Promise.all(
+        (usersData || []).map(async (user) => {
+          const { data: memberships } = await supabase
+            .from('group_members')
+            .select(`
+              group_id,
+              role,
+              groups (id, name)
+            `)
+            .eq('user_id', user.id);
+          
+          return {
+            ...user,
+            userGroups: memberships || [],
+            groupId: memberships?.[0]?.group_id || null,
+            groupName: memberships?.[0]?.groups?.name || null,
+          };
+        })
+      );
+
+      setUsers(usersWithGroups || []);
 
       // Fetch groups
       const groupsData = await getGroups();

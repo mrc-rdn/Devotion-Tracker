@@ -2,16 +2,15 @@ import { supabase } from '../lib/supabase';
 import { formatDateISO } from '../utils/formatDate';
 
 /**
- * Get all groups where the user is a leader (multi-group support)
+ * Get all groups where the user is a leader
  */
 export async function getLeaderGroups(userId) {
   if (!userId) return [];
-
   const { data, error } = await supabase
-    .from('group_leaders')
+    .from('group_members')
     .select(`
       group_id,
-      created_at,
+      joined_at,
       groups (
         id,
         name,
@@ -19,27 +18,62 @@ export async function getLeaderGroups(userId) {
         created_at
       )
     `)
-    .eq('leader_id', userId)
-    .order('created_at', { ascending: false });
+    .eq('user_id', userId)
+    .eq('role', 'leader')
+    .order('joined_at', { ascending: false });
 
   if (error) {
     console.error('Failed to fetch leader groups:', error.message);
     return [];
   }
 
-  // Transform nested data
   return (data || []).map((entry) => ({
     id: entry.groups.id,
     name: entry.groups.name,
     description: entry.groups.description,
     created_at: entry.groups.created_at,
-    leader_since: entry.created_at,
+    leader_since: entry.joined_at,
+  }));
+}
+
+/**
+ * Get all groups where the user is a member
+ */
+export async function getUserGroups(userId) {
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from('group_members')
+    .select(`
+      group_id,
+      role,
+      joined_at,
+      groups (
+        id,
+        name,
+        description,
+        created_at
+      )
+    `)
+    .eq('user_id', userId)
+    .order('joined_at', { ascending: false });
+
+  if (error) {
+    console.error('Failed to fetch user groups:', error.message);
+    return [];
+  }
+
+  return (data || []).map((entry) => ({
+    id: entry.groups.id,
+    name: entry.groups.name,
+    description: entry.groups.description,
+    created_at: entry.groups.created_at,
+    role: entry.role,
+    joined_at: entry.joined_at,
   }));
 }
 
 /**
  * Search groups by name with partial matching
- * Returns top 10 closest matches with their leaders, case-insensitive
  */
 export async function searchGroups(query) {
   if (!query || query.length < 2) return [];
@@ -51,9 +85,10 @@ export async function searchGroups(query) {
       name,
       description,
       created_at,
-      group_leaders (
-        leader_id,
-        profiles:leader_id (
+      group_members!inner (
+        user_id,
+        role,
+        profiles:profiles (
           id,
           first_name,
           last_name,
@@ -70,85 +105,45 @@ export async function searchGroups(query) {
     return [];
   }
 
-  // Transform nested Supabase data into a flat, UI-friendly structure
   return (data || []).map((group) => ({
     id: group.id,
     name: group.name,
     description: group.description,
     created_at: group.created_at,
-    leaders: (group.group_leaders || [])
-      .filter((gl) => gl.profiles) // Filter out any null profiles
-      .map((gl) => ({
-        id: gl.profiles.id,
-        first_name: gl.profiles.first_name,
-        last_name: gl.profiles.last_name,
-        email: gl.profiles.email,
+    leaders: (group.group_members || [])
+      .filter((gm) => gm.role === 'leader' && gm.profiles)
+      .map((gm) => ({
+        id: gm.profiles.id,
+        first_name: gm.profiles.first_name,
+        last_name: gm.profiles.last_name,
+        email: gm.profiles.email,
       })),
   }));
 }
 
 /**
- * Get all groups with their leaders
- */
-export async function getAllGroups() {
-  const { data, error } = await supabase
-    .from('groups')
-    .select(`
-      id,
-      name,
-      description,
-      created_at,
-      group_leaders (
-        leader_id,
-        profiles (
-          id,
-          first_name,
-          last_name,
-          email
-        )
-      )
-    `)
-    .order('name');
-
-  if (error) {
-    console.error('Failed to fetch groups:', error.message);
-    return [];
-  }
-
-  // Transform nested Supabase data into a flat, UI-friendly structure
-  return (data || []).map((group) => ({
-    id: group.id,
-    name: group.name,
-    description: group.description,
-    created_at: group.created_at,
-    leaders: (group.group_leaders || []).map((gl) => ({
-      id: gl.profiles.id,
-      first_name: gl.profiles.first_name,
-      last_name: gl.profiles.last_name,
-      email: gl.profiles.email,
-    })),
-  }));
-}
-
-/**
  * Create a new group (leader or admin)
- * Automatically creates a group_leaders entry for the creator via trigger
  */
 export async function createGroup(name, description = '') {
-  const { data, error } = await supabase
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { data: group, error: groupError } = await supabase
     .from('groups')
     .insert({ name, description })
     .select()
     .single();
 
-  if (error) {
-    if (error.code === '23505') {
+  if (groupError) {
+    if (groupError.code === '23505') {
       throw new Error('A group with this name already exists');
     }
-    throw new Error(error.message || 'Failed to create group');
+    throw new Error(groupError.message || 'Failed to create group');
   }
 
-  return data;
+  // Add creator as leader
+  await supabase.from('group_members').insert({ group_id: group.id, user_id: user.id, role: 'leader' });
+  return group;
 }
 
 /**
@@ -158,56 +153,115 @@ export async function joinGroup(groupId) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
+  const { data: existing } = await supabase
+    .from('group_members')
+    .select('id')
+    .eq('group_id', groupId)
+    .eq('user_id', user.id)
+    .single();
+
+  if (existing) {
+    throw new Error('You are already a member of this group');
+  }
+
   const { data, error } = await supabase
-    .from('profiles')
-    .update({ group_id: groupId })
-    .eq('id', user.id)
-    .select('*, groups(name)')
+    .from('group_members')
+    .insert({ group_id: groupId, user_id: user.id, role: 'member' })
+    .select()
     .single();
 
   if (error) throw new Error(error.message || 'Failed to join group');
-
   return data;
 }
 
 /**
- * Leave current group
+ * Leave a group
  */
-export async function leaveGroup() {
+export async function leaveGroup(groupId) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
   const { error } = await supabase
-    .from('profiles')
-    .update({ group_id: null })
-    .eq('id', user.id);
+    .from('group_members')
+    .delete()
+    .eq('group_id', groupId)
+    .eq('user_id', user.id);
 
   if (error) throw new Error(error.message || 'Failed to leave group');
+}
+
+/**
+ * Get ALL group members (leaders + members)
+ * FIXED: Uses 2-Step Fetch to bypass Join issues
+ */
+export async function getGroupMembers(groupId) {
+  console.log('🔍 Fetching members for group:', groupId);
+  
+  // Step 1: Fetch the list of members (user IDs and roles)
+  const { data: memberships, error: memError } = await supabase
+    .from('group_members')
+    .select('*')
+    .eq('group_id', groupId);
+
+  if (memError) {
+    console.error('❌ Error fetching group_members:', memError.message);
+    return [];
+  }
+
+  console.log('📦 Memberships found:', memberships);
+
+  if (!memberships || memberships.length === 0) {
+    console.warn('⚠️ No members found in group_members table.');
+    return [];
+  }
+
+  // Step 2: Fetch profile details for these users separately
+  const userIds = memberships.map(m => m.user_id);
+  
+  const { data: profiles, error: profError } = await supabase
+    .from('profiles')
+    .select('id, first_name, last_name, email, role, avatar_url')
+    .in('id', userIds);
+
+  if (profError) {
+    console.error('❌ Error fetching profiles:', profError.message);
+    return [];
+  }
+
+  console.log('👤 Profiles found:', profiles);
+
+  // Step 3: Combine them manually
+  const members = memberships.map(membership => {
+    const profile = profiles?.find(p => p.id === membership.user_id);
+    
+    if (!profile) {
+      console.warn(`⚠️ Profile missing for user_id: ${membership.user_id}`);
+      return null;
+    }
+
+    return {
+      id: profile.id,
+      first_name: profile.first_name,
+      last_name: profile.last_name,
+      email: profile.email,
+      role: profile.role,
+      member_role: membership.role,
+      avatar_url: profile.avatar_url,
+      joined_at: membership.joined_at,
+    };
+  }).filter(Boolean); // Remove nulls
+
+  console.log('✅ Final processed members:', members);
+  return members;
 }
 
 /**
  * Get group leaders for a group
  */
 export async function getGroupLeaders(groupId) {
-  const { data, error } = await supabase
-    .from('group_leaders')
-    .select(`
-      leader_id,
-      profiles (id, first_name, last_name, email)
-    `)
-    .eq('group_id', groupId);
-
-  if (error) {
-    console.error('Failed to fetch group leaders:', error.message);
-    return [];
-  }
-
-  return (data || []).map((gl) => ({
-    id: gl.profiles.id,
-    first_name: gl.profiles.first_name,
-    last_name: gl.profiles.last_name,
-    email: gl.profiles.email,
-  }));
+  // Reuse getGroupMembers and filter
+  const members = await getGroupMembers(groupId);
+  return members.filter(m => m.member_role === 'leader');
 }
 
 /**
@@ -215,15 +269,16 @@ export async function getGroupLeaders(groupId) {
  */
 export async function addCoLeader(groupId, leaderId) {
   const { data, error } = await supabase
-    .from('group_leaders')
-    .insert({ group_id: groupId, leader_id: leaderId })
+    .from('group_members')
+    .upsert({
+      group_id: groupId,
+      user_id: leaderId,
+      role: 'leader',
+    }, { onConflict: 'group_id,user_id' })
     .select()
     .single();
 
   if (error) {
-    if (error.code === '23505') {
-      throw new Error('This user is already a leader of this group');
-    }
     throw new Error(error.message || 'Failed to add co-leader');
   }
 
@@ -231,16 +286,16 @@ export async function addCoLeader(groupId, leaderId) {
 }
 
 /**
- * Remove a co-leader from a group
+ * Remove a member from a group (used for leaders and members)
  */
-export async function removeCoLeader(groupId, leaderId) {
+export async function removeMember(groupId, userId) {
   const { error } = await supabase
-    .from('group_leaders')
+    .from('group_members')
     .delete()
     .eq('group_id', groupId)
-    .eq('leader_id', leaderId);
+    .eq('user_id', userId);
 
-  if (error) throw new Error(error.message || 'Failed to remove co-leader');
+  if (error) throw new Error(error.message || 'Failed to remove member');
 }
 
 /**
@@ -261,11 +316,12 @@ export async function getAvailableLeaders(currentGroupId = null) {
   // Check which leaders are already assigned to this group
   if (currentGroupId) {
     const { data: assignedLeaders } = await supabase
-      .from('group_leaders')
-      .select('leader_id')
-      .eq('group_id', currentGroupId);
+      .from('group_members')
+      .select('user_id')
+      .eq('group_id', currentGroupId)
+      .eq('role', 'leader');
 
-    const assignedIds = new Set((assignedLeaders || []).map((l) => l.leader_id));
+    const assignedIds = new Set((assignedLeaders || []).map((l) => l.user_id));
     return (data || []).map((leader) => ({
       ...leader,
       alreadyAssigned: assignedIds.has(leader.id),
@@ -276,13 +332,16 @@ export async function getAvailableLeaders(currentGroupId = null) {
 }
 
 /**
- * Get leaderboard for a group (all members + leaders ranked by devotion count)
+ * Get leaderboard for a group
  */
 export async function getGroupLeaderboard(groupId, startDate, endDate) {
   // Get all group members
   const { data: members, error: membersError } = await supabase
-    .from('profiles')
-    .select('id, first_name, last_name, role')
+    .from('group_members')
+    .select(`
+      user_id,
+      profiles (id, first_name, last_name, role)
+    `)
     .eq('group_id', groupId);
 
   if (membersError) {
@@ -296,15 +355,15 @@ export async function getGroupLeaderboard(groupId, startDate, endDate) {
       const { count } = await supabase
         .from('devotions')
         .select('*', { count: 'exact', head: true })
-        .eq('user_id', member.id)
+        .eq('user_id', member.user_id)
         .gte('devotion_date', formatDateISO(startDate))
         .lte('devotion_date', formatDateISO(endDate));
 
       return {
-        id: member.id,
-        first_name: member.first_name,
-        last_name: member.last_name,
-        role: member.role,
+        id: member.profiles.id,
+        first_name: member.profiles.first_name,
+        last_name: member.profiles.last_name,
+        role: member.profiles.role,
         devotionCount: count || 0,
       };
     })
@@ -315,7 +374,8 @@ export async function getGroupLeaderboard(groupId, startDate, endDate) {
 }
 
 /**
- * Subscribe to realtime devotion changes in a group (for live leaderboard)
+ * Subscribe to realtime devotion changes in a group
+ * Listens to all devotion inserts (no group_id filter since it's removed)
  */
 export function subscribeToGroupDevotions(groupId, onDevotionChange) {
   const channel = supabase
@@ -326,7 +386,6 @@ export function subscribeToGroupDevotions(groupId, onDevotionChange) {
         event: 'INSERT',
         schema: 'public',
         table: 'devotions',
-        filter: `group_id=eq.${groupId}`,
       },
       (payload) => onDevotionChange(payload.new)
     )

@@ -133,7 +133,7 @@ export async function searchUsers(query, currentUserId) {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, first_name, last_name, email, role, group_id, groups(name)')
+    .select('id, first_name, last_name, email, role')
     .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%`)
     .neq('id', currentUserId)
     .limit(10);

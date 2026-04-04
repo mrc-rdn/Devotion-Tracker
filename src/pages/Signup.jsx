@@ -2,11 +2,10 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { UserPlus, AlertCircle, CheckCircle } from 'lucide-react';
+import { UserPlus, AlertCircle, CheckCircle, ChevronRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getGroups } from '../services/auth.service';
 import { signupSchema } from '../utils/validation';
-import { ROLES } from '../lib/constants';
 
 export default function Signup() {
   const { signup } = useAuth();
@@ -15,28 +14,19 @@ export default function Signup() {
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [groups, setGroups] = useState([]);
-  const [selectedRole, setSelectedRole] = useState('member');
 
   const {
     register,
     handleSubmit,
-    watch,
-    setValue,
     formState: { errors },
   } = useForm({
     resolver: zodResolver(signupSchema),
     defaultValues: {
-      firstName: '',
-      lastName: '',
-      email: '',
-      password: '',
-      confirmPassword: '',
-      role: 'member',
-      groupId: '',
+      firstName: '', lastName: '', email: '',
+      password: '', confirmPassword: '', role: 'member',
     },
   });
 
-  // Fetch groups on mount
   useEffect(() => {
     async function loadGroups() {
       const data = await getGroups();
@@ -45,17 +35,10 @@ export default function Signup() {
     loadGroups();
   }, []);
 
-  // Watch role to conditionally show group selection
-  const watchedRole = watch('role');
-  useEffect(() => {
-    setSelectedRole(watchedRole);
-  }, [watchedRole]);
-
   async function onSubmit(data) {
     setError('');
     setSuccess('');
     setSubmitting(true);
-
     try {
       await signup({
         email: data.email,
@@ -65,180 +48,116 @@ export default function Signup() {
         role: data.role,
         groupId: data.groupId || undefined,
       });
-
-      setSuccess('Account created successfully! Please check your email to verify your account.');
-      
-      // Redirect after delay
-      setTimeout(() => {
-        navigate('/login');
-      }, 3000);
+      setSuccess('Account created! Please check your email to verify.');
+      setTimeout(() => navigate('/login'), 3000);
     } catch (err) {
-      console.error('Signup error:', err);
-      if (err.message?.includes('User already registered')) {
-        setError('An account with this email already exists.');
-      } else if (err.message?.includes('Password')) {
-        setError(err.message);
-      } else {
-        setError(err.message || 'Failed to create account. Please try again.');
-      }
+      setError(err.message || 'Failed to create account.');
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <div className="w-full max-w-md">
-      {/* Header */}
-      <div className="text-center mb-8">
-        <div className="mx-auto w-12 h-12 bg-primary-600 rounded-xl flex items-center justify-center mb-4">
-          <UserPlus className="w-6 h-6 text-white" />
-        </div>
-        <h1 className="text-2xl font-bold text-gray-900">Create your account</h1>
-        <p className="text-gray-500 mt-1">Join the Devotion Tracker community</p>
-      </div>
-
-      {/* Card */}
-      <div className="card">
-        {/* Error Alert */}
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-red-700">{error}</p>
-          </div>
-        )}
-
-        {/* Success Alert */}
-        {success && (
-          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-start gap-2">
-            <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-green-700">{success}</p>
-          </div>
-        )}
-
-        {/* Form */}
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          {/* Name Row */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="firstName" className="label">First Name</label>
-              <input
-                id="firstName"
-                type="text"
-                className={`input-field ${errors.firstName ? 'input-error' : ''}`}
-                placeholder="John"
-                {...register('firstName')}
-              />
-              {errors.firstName && (
-                <p className="error-text">{errors.firstName.message}</p>
-              )}
+    
+      <div className="h-full w-full flex flex-col md:flex-row bg-white shadow-2xl rounded-sm overflow-hidden border border-gray-100">
+        
+        {/* Left Side: Liturgical Branding */}
+        <div className="hidden md:flex md:w-2/5 bg-[#1a365d] relative p-12 flex-col justify-between text-white">
+          <div className="z-10">
+            <div className="flex items-center gap-2 mb-12">
+              <UserPlus className="w-5 h-5 text-blue-300" />
+              <span className="tracking-[0.3em] uppercase text-[10px] font-bold">Fellowship</span>
             </div>
-            <div>
-              <label htmlFor="lastName" className="label">Last Name</label>
-              <input
-                id="lastName"
-                type="text"
-                className={`input-field ${errors.lastName ? 'input-error' : ''}`}
-                placeholder="Doe"
-                {...register('lastName')}
-              />
-              {errors.lastName && (
-                <p className="error-text">{errors.lastName.message}</p>
-              )}
-            </div>
+            <h1 className="text-4xl font-extrabold leading-tight tracking-tighter uppercase">
+              Begin Your <br /> Journey
+            </h1>
+            <div className="w-16 h-1 bg-white/30 mt-6"></div>
           </div>
-
-          {/* Email */}
-          <div>
-            <label htmlFor="email" className="label">Email</label>
-            <input
-              id="email"
-              type="email"
-              autoComplete="email"
-              className={`input-field ${errors.email ? 'input-error' : ''}`}
-              placeholder="you@example.com"
-              {...register('email')}
-            />
-            {errors.email && (
-              <p className="error-text">{errors.email.message}</p>
-            )}
-          </div>
-
-          {/* Password */}
-          <div>
-            <label htmlFor="password" className="label">Password</label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="new-password"
-              className={`input-field ${errors.password ? 'input-error' : ''}`}
-              placeholder="Min 8 chars, uppercase, lowercase, number"
-              {...register('password')}
-            />
-            {errors.password && (
-              <p className="error-text">{errors.password.message}</p>
-            )}
-          </div>
-
-          {/* Confirm Password */}
-          <div>
-            <label htmlFor="confirmPassword" className="label">Confirm Password</label>
-            <input
-              id="confirmPassword"
-              type="password"
-              autoComplete="new-password"
-              className={`input-field ${errors.confirmPassword ? 'input-error' : ''}`}
-              placeholder="Re-enter your password"
-              {...register('confirmPassword')}
-            />
-            {errors.confirmPassword && (
-              <p className="error-text">{errors.confirmPassword.message}</p>
-            )}
-          </div>
-
-          {/* Role */}
-          <div>
-            <label htmlFor="role" className="label">Role</label>
-            <select
-              id="role"
-              className={`input-field ${errors.role ? 'input-error' : ''}`}
-              {...register('role')}
-            >
-              <option value="member">Member</option>
-              <option value="leader">Leader</option>
-              <option value="admin">Admin</option>
-            </select>
-            {errors.role && (
-              <p className="error-text">{errors.role.message}</p>
-            )}
-          </div>
-
           
+          <div className="z-10 italic text-blue-100/60 text-sm leading-relaxed">
+            "For where two or three gather in my name, there am I with them."
+          </div>
 
-          {/* Submit */}
-          <button
-            type="submit"
-            className="btn-primary w-full"
-            disabled={submitting}
-          >
-            {submitting ? (
-              <>
-                <span className="spinner mr-2" />
-                Creating account...
-              </>
-            ) : (
-              'Create Account'
-            )}
-          </button>
-        </form>
+          {/* Decorative Elements from Slides */}
+          <div className="absolute top-0 right-0 p-8 opacity-10">
+            {[...Array(3)].map((_, i) => (
+              <ChevronRight key={i} className="w-12 h-12 -mt-6" style={{ transform: 'rotate(90deg)' }} />
+            ))}
+          </div>
 
-        {/* Footer */}
-        <p className="mt-6 text-center text-sm text-gray-500">
-          Already have an account?{' '}
-          <Link to="/login" className="text-primary-600 hover:text-primary-700 font-medium">
-            Sign in
-          </Link>
-        </p>
+          <div className="absolute inset-0 opacity-15 grayscale bg-[url('https://images.unsplash.com/photo-1438232992991-995b7058bbb3?auto=format&fit=crop&q=80')] bg-cover bg-center"></div>
+        </div>
+
+        {/* Right Side: Signup Form */}
+        <div className="w-full md:w-3/5 p-8 md:p-12">
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold text-slate-800 uppercase tracking-widest">Create Account</h2>
+            <p className="text-xs text-slate-400 mt-2 uppercase tracking-tight">Join the Devotion Tracker community</p>
+          </div>
+
+          {error && (
+            <div className="mb-6 p-3 bg-red-50 border-l-4 border-red-500 flex items-center gap-2 text-red-700 text-sm">
+              <AlertCircle className="w-4 h-4" /> {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="mb-6 p-3 bg-green-50 border-l-4 border-green-500 flex items-center gap-2 text-green-700 text-sm">
+              <CheckCircle className="w-4 h-4" /> {success}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500">First Name</label>
+                <input {...register('firstName')} className={`w-full border-b-2 py-2 focus:outline-none transition-colors ${errors.firstName ? 'border-red-300' : 'border-slate-100 focus:border-[#1a365d]'}`} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Last Name</label>
+                <input {...register('lastName')} className={`w-full border-b-2 py-2 focus:outline-none transition-colors ${errors.lastName ? 'border-red-300' : 'border-slate-100 focus:border-[#1a365d]'}`} />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Email Address</label>
+              <input type="email" {...register('email')} className={`w-full border-b-2 py-2 focus:outline-none transition-colors ${errors.email ? 'border-red-300' : 'border-slate-100 focus:border-[#1a365d]'}`} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Password</label>
+                <input type="password" {...register('password')} className={`w-full border-b-2 py-2 focus:outline-none transition-colors ${errors.password ? 'border-red-300' : 'border-slate-100 focus:border-[#1a365d]'}`} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Confirm</label>
+                <input type="password" {...register('confirmPassword')} className={`w-full border-b-2 py-2 focus:outline-none transition-colors ${errors.confirmPassword ? 'border-red-300' : 'border-slate-100 focus:border-[#1a365d]'}`} />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500">I am joining as a</label>
+              <select {...register('role')} className="w-full border-b-2 py-2 bg-transparent focus:outline-none focus:border-[#1a365d] text-slate-600">
+                <option value="member">Member</option>
+                <option value="leader">Leader</option>
+              </select>
+            </div>
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full bg-[#1a365d] hover:bg-[#2a4a7d] text-white py-4 mt-4 font-bold uppercase tracking-[0.2em] text-xs transition-all shadow-lg active:scale-[0.98]"
+            >
+              {submitting ? 'Registering...' : 'Complete Registration'}
+            </button>
+          </form>
+
+          <p className="mt-8 text-center text-[11px] text-slate-400 uppercase tracking-widest">
+            Already have an account?{' '}
+            <Link to="/login" className="text-[#1a365d] font-bold hover:underline ml-1">Sign In</Link>
+          </p>
+        </div>
       </div>
-    </div>
+    
   );
 }

@@ -10,7 +10,6 @@ import {
   X,
   Loader2,
   AlertCircle,
-  Check,
   ChevronLeft,
   ChevronRight,
   LayoutDashboard,
@@ -19,15 +18,16 @@ import {
   LogOut,
   Menu,
   Calendar,
+  Crown,
+  BookOpen,
 } from 'lucide-react';
-import { format } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardHeader, Button, Badge, Modal } from '../components/ui';
 import { supabase } from '../lib/supabase';
 import {
-  getGroupLeaders,
+  getGroupMembers,
   addCoLeader,
-  removeCoLeader,
+  removeMember,
   getAvailableLeaders,
 } from '../services/groups.service';
 
@@ -42,7 +42,6 @@ export default function GroupDetail() {
 
   // Group Data
   const [group, setGroup] = useState(null);
-  const [groupLeaders, setGroupLeaders] = useState([]);
   const [groupMembers, setGroupMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -53,6 +52,13 @@ export default function GroupDetail() {
   const [leaderSearch, setLeaderSearch] = useState('');
   const [addingLeader, setAddingLeader] = useState(false);
   const [modalError, setModalError] = useState('');
+
+  // Add Member Modal
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [availableMembers, setAvailableMembers] = useState([]);
+  const [memberSearchInput, setMemberSearchInput] = useState('');
+  const [addingMember, setAddingMember] = useState(false);
+  const [memberModalError, setMemberModalError] = useState('');
 
   // Stats
   const [stats, setStats] = useState({
@@ -67,9 +73,18 @@ export default function GroupDetail() {
   const [memberSearch, setMemberSearch] = useState('');
   const [devotionData, setDevotionData] = useState({});
 
-  const isLeader = groupLeaders.some((l) => l.id === user?.id);
+  // Check if current user is a leader of this group
+  const isLeader = groupMembers.some((m) => m.member_role === 'leader' && m.id === user?.id);
   const isAdmin = profile?.role === 'admin';
   const canManageLeaders = isLeader || isAdmin;
+
+  // Helper to format dates using local time (not UTC) to avoid timezone shifts
+  const formatDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   // Fetch group data
   const fetchGroupData = useCallback(async () => {
@@ -78,7 +93,9 @@ export default function GroupDetail() {
     setError('');
 
     try {
-      // Fetch group info
+      console.log('Fetching data for group:', groupId);
+
+      // 1. Fetch group info
       const { data: groupData, error: groupError } = await supabase
         .from('groups')
         .select('*')
@@ -89,26 +106,22 @@ export default function GroupDetail() {
         throw new Error('Group not found');
       }
       setGroup(groupData);
+      console.log('Group Data:', groupData);
 
-      // Fetch leaders
-      const leaders = await getGroupLeaders(groupId);
-      setGroupLeaders(leaders);
+      // 2. Fetch members (includes leaders and members)
+      const members = await getGroupMembers(groupId);
+      console.log('Fetched Members:', members); // DEBUG LOG
+      setGroupMembers(members);
 
-      // Fetch members
-      const { data: membersData, error: membersError } = await supabase
-        .from('profiles')
-        .select('id, first_name, last_name, email, role')
-        .eq('group_id', groupId)
-        .order('first_name');
+      if (members.length === 0) {
+        console.warn('No members found for this group in database');
+      }
 
-      if (membersError) throw membersError;
-      setGroupMembers(membersData || []);
+      // 3. Fetch devotions for these members
+      await fetchDevotionsForPeriod(groupId, members);
 
-      // Fetch devotions
-      await fetchDevotionsForPeriod(groupId, membersData || []);
-
-      // Calculate stats
-      calculateStats(groupId, membersData || []);
+      // 4. Calculate stats
+      calculateStats(groupId, members);
     } catch (err) {
       console.error('Failed to fetch group data:', err);
       setError(err.message || 'Failed to load group data');
@@ -121,17 +134,35 @@ export default function GroupDetail() {
   async function fetchDevotionsForPeriod(groupId, members) {
     const { startDate, endDate } = getDateRange();
 
+    // We need to map members by ID first
+    const memberIds = members.map((m) => m.id);
+
+    if (memberIds.length === 0) {
+      setDevotionData({});
+      return;
+    }
+
+    console.log('Fetching devotions for', memberIds.length, 'members');
+
+    const startDateStr = formatDate(startDate);
+    const endDateStr = formatDate(endDate);
+
+    console.log('Date range:', startDateStr, 'to', endDateStr);
+
+    // Fetch devotions for the group members in this date range (no group_id column needed)
     const { data, error: devError } = await supabase
       .from('devotions')
       .select('user_id, devotion_date')
-      .eq('group_id', groupId)
-      .gte('devotion_date', startDate.toISOString().split('T')[0])
-      .lte('devotion_date', endDate.toISOString().split('T')[0]);
+      .in('user_id', memberIds)
+      .gte('devotion_date', startDateStr)
+      .lte('devotion_date', endDateStr);
 
     if (devError) {
       console.error('Failed to fetch devotions:', devError);
       return;
     }
+
+    console.log('Fetched Devotions:', data);
 
     const dataMap = {};
     members.forEach((m) => {
@@ -140,9 +171,17 @@ export default function GroupDetail() {
 
     (data || []).forEach((d) => {
       if (!dataMap[d.user_id]) dataMap[d.user_id] = {};
-      dataMap[d.user_id][d.devotion_date] = true;
+      // devotion_date is already a DATE type string like "2024-04-05" from the DB
+      // Store it directly as the key
+      const dateStr = typeof d.devotion_date === 'string' 
+        ? d.devotion_date.substring(0, 10) 
+        : new Date(d.devotion_date).toLocaleDateString('sv-SE'); // sv-SE gives YYYY-MM-DD format
+      if (dateStr) {
+        dataMap[d.user_id][dateStr] = true;
+      }
     });
 
+    console.log('Devotion Data Map:', dataMap);
     setDevotionData(dataMap);
   }
 
@@ -152,14 +191,13 @@ export default function GroupDetail() {
     let startDate, endDate;
 
     if (viewMode === 'weekly') {
-      // Start on Monday (1) instead of Sunday (0)
       const dayOfWeek = now.getDay();
-      const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
       const startOfWeek = new Date(now);
-      startOfWeek.setDate(now.getDate() - daysFromMonday);
+      startOfWeek.setDate(now.getDate() - daysSinceMonday);
       startDate = startOfWeek;
       endDate = new Date(startOfWeek);
-      endDate.setDate(startOfWeek.getDate() + 6); // End on Sunday
+      endDate.setDate(startOfWeek.getDate() + 6);
     } else {
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -191,27 +229,42 @@ export default function GroupDetail() {
 
   // Calculate stats
   async function calculateStats(groupId, members) {
-    const today = new Date().toISOString().split('T')[0];
+    const { startDate, endDate } = getDateRange();
 
-    const { count: todayCount } = await supabase
-      .from('devotions')
-      .select('*', { count: 'exact', head: true })
-      .eq('group_id', groupId)
-      .eq('devotion_date', today);
+    // Get member IDs for this group
+    const memberIds = members.map(m => m.id);
 
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    const { count: monthCount } = await supabase
-      .from('devotions')
-      .select('*', { count: 'exact', head: true })
-      .eq('group_id', groupId)
-      .gte('devotion_date', monthStart.toISOString().split('T')[0]);
+    let periodCount = 0;
+    let todayCount = 0;
+
+    if (memberIds.length > 0) {
+      // Use local time for "today" to match Philippines timezone
+      const today = formatDate(new Date());
+      
+      // Count for selected period
+      const { count: periodCountResult } = await supabase
+        .from('devotions')
+        .select('*', { count: 'exact', head: true })
+        .in('user_id', memberIds)
+        .gte('devotion_date', formatDate(startDate))
+        .lte('devotion_date', formatDate(endDate));
+
+      // Count for today
+      const { count: todayCountResult } = await supabase
+        .from('devotions')
+        .select('*', { count: 'exact', head: true })
+        .in('user_id', memberIds)
+        .eq('devotion_date', today);
+
+      periodCount = periodCountResult || 0;
+      todayCount = todayCountResult || 0;
+    }
 
     setStats({
       totalMembers: members.length,
-      totalSubmissions: monthCount || 0,
+      totalSubmissions: periodCount,
       todaySubmissionPercent:
-        members.length > 0 ? Math.round(((todayCount || 0) / members.length) * 100) : 0,
+        members.length > 0 ? Math.round((todayCount / members.length) * 100) : 0,
     });
   }
 
@@ -240,8 +293,9 @@ export default function GroupDetail() {
 
     try {
       await addCoLeader(groupId, leaderId);
-      const leaders = await getGroupLeaders(groupId);
-      setGroupLeaders(leaders);
+      // Refresh members list
+      const members = await getGroupMembers(groupId);
+      setGroupMembers(members);
       setShowAddLeaderModal(false);
       setLeaderSearch('');
     } catch (err) {
@@ -251,15 +305,83 @@ export default function GroupDetail() {
     }
   }
 
-  async function handleRemoveLeader(leaderId) {
-    if (!confirm('Remove this co-leader from the group?')) return;
+  async function handleRemoveMember(memberId, memberName) {
+    if (!confirm(`Are you sure you want to remove ${memberName} from this group?`)) return;
 
     try {
-      await removeCoLeader(groupId, leaderId);
-      const leaders = await getGroupLeaders(groupId);
-      setGroupLeaders(leaders);
+      await removeMember(groupId, memberId);
+      // Refresh members list
+      const members = await getGroupMembers(groupId);
+      setGroupMembers(members);
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  // Add Member Modal Logic
+  async function loadAvailableMembers() {
+    // Fetch all users who are not already in this group
+    const { data: existingMembers } = await supabase
+      .from('group_members')
+      .select('user_id')
+      .eq('group_id', groupId);
+
+    const existingUserIds = new Set((existingMembers || []).map(m => m.user_id));
+
+    const { data: users, error } = await supabase
+      .from('profiles')
+      .select('id, first_name, last_name, email, role')
+      .order('first_name');
+
+    if (error) {
+      console.error('Failed to fetch users:', error.message);
+      return;
+    }
+
+    // Filter out existing members and current user
+    const available = (users || [])
+      .filter(u => !existingUserIds.has(u.id) && u.id !== user?.id)
+      .map(u => ({
+        ...u,
+        alreadyAssigned: false,
+      }));
+
+    setAvailableMembers(available);
+  }
+
+  function handleOpenAddMemberModal() {
+    setShowAddMemberModal(true);
+    setMemberSearchInput('');
+    setMemberModalError('');
+    loadAvailableMembers();
+  }
+
+  const filteredAvailableMembers = availableMembers.filter(
+    (u) =>
+      `${u.first_name} ${u.last_name}`.toLowerCase().includes(memberSearchInput.toLowerCase()) ||
+      u.email?.toLowerCase().includes(memberSearchInput.toLowerCase())
+  );
+
+  async function handleAddMember(userId) {
+    setAddingMember(true);
+    setMemberModalError('');
+
+    try {
+      const { error } = await supabase
+        .from('group_members')
+        .insert({ group_id: groupId, user_id: userId, role: 'member' });
+
+      if (error) throw error;
+
+      // Refresh members list
+      const members = await getGroupMembers(groupId);
+      setGroupMembers(members);
+      setShowAddMemberModal(false);
+      setMemberSearchInput('');
+    } catch (err) {
+      setMemberModalError(err.message || 'Failed to add member');
+    } finally {
+      setAddingMember(false);
     }
   }
 
@@ -372,8 +494,11 @@ export default function GroupDetail() {
                 <p className="text-sm font-semibold text-gray-900 truncate">
                   {profile?.first_name} {profile?.last_name}
                 </p>
-                <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-                  Leader
+                <span className={`inline-block mt-0.5 px-2 py-0.5 rounded-full text-xs font-medium ${
+                  profile?.role === 'admin' ? 'bg-purple-100 text-purple-700' :
+                  profile?.role === 'leader' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                }`}>
+                  {profile?.role?.charAt(0).toUpperCase() + profile?.role?.slice(1)}
                 </span>
               </div>
             </div>
@@ -411,10 +536,25 @@ export default function GroupDetail() {
             </Link>
             <Link
               to="/leader/messages"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1 text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1 transition-colors ${
+                location.pathname === '/leader/messages'
+                  ? 'bg-primary-50 text-primary-700'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+              }`}
             >
               <MessageSquare className="w-5 h-5" />
               Messages
+            </Link>
+            <Link
+              to="/leader/bible"
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1 transition-colors ${
+                location.pathname === '/leader/bible'
+                  ? 'bg-primary-50 text-primary-700'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+              }`}
+            >
+              <BookOpen className="w-5 h-5" />
+              Bible
             </Link>
           </nav>
 
@@ -471,12 +611,18 @@ export default function GroupDetail() {
                 )}
               </div>
             </div>
-            {canManageLeaders && (
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={handleOpenAddMemberModal}>
+                <Users className="w-4 h-4 mr-2" />
+                Add Member
+              </Button>
+              {canManageLeaders && (
                 <Button variant="secondary" onClick={handleOpenAddLeaderModal}>
-                  <UserPlus className="w-4 h-4 mr-2 " />
-                  Add Co-Leader
+                  <UserPlus className="w-4 h-4 mr-2" />
+                  Add Leader
                 </Button>
               )}
+            </div>
             <Button variant="secondary" onClick={fetchGroupData}>
               Refresh
             </Button>
@@ -502,7 +648,7 @@ export default function GroupDetail() {
                   <CheckSquare className="w-6 h-6 text-green-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">This Month Submissions</p>
+                  <p className="text-sm text-gray-500">{viewMode === 'weekly' ? 'This Week Submissions' : 'This Month Submissions'}</p>
                   <p className="text-2xl font-bold text-gray-900">{stats.totalSubmissions}</p>
                 </div>
               </div>
@@ -520,8 +666,6 @@ export default function GroupDetail() {
               </div>
             </Card>
           </div>
-
-          
 
           {/* Calendar Tracker */}
           <Card>
@@ -576,20 +720,6 @@ export default function GroupDetail() {
                   <ChevronRight className="w-4 h-4 text-gray-600" />
                 </button>
               </div>
-
-              {/* Member Search */}
-              <div className="flex-1 min-w-[200px] max-w-sm ml-auto">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search members..."
-                    className="input-field pl-9"
-                    value={memberSearch}
-                    onChange={(e) => setMemberSearch(e.target.value)}
-                  />
-                </div>
-              </div>
             </div>
 
             {/* Legend */}
@@ -633,16 +763,13 @@ export default function GroupDetail() {
                         </th>
                       );
                     })}
-                    <th className="sticky right-0 z-10 bg-white border-b border-gray-200 p-3 text-center text-xs font-semibold text-gray-700 uppercase min-w-[60px]">
-                      Total
-                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredMembers.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={calendarDays.length + 2}
+                        colSpan={calendarDays.length + 1}
                         className="text-center py-8 text-gray-500"
                       >
                         No members found
@@ -650,16 +777,12 @@ export default function GroupDetail() {
                     </tr>
                   ) : (
                     filteredMembers.map((member, rowIndex) => {
-                      const isEvenRow = rowIndex % 2 === 0;
                       const memberDevotions = devotionData[member.id] || {};
-
-                      // Calculate total devotions for this period
-                      const totalDevotions = Object.keys(memberDevotions).length;
 
                       return (
                         <tr
                           key={member.id}
-                          className={isEvenRow ? 'bg-gray-50/50' : 'bg-white'}
+                          className={rowIndex % 2 === 0 ? 'bg-gray-50/50' : 'bg-white'}
                         >
                           <td className="sticky left-0 z-10 border-b border-gray-200 p-3">
                             <div className="flex items-center gap-2">
@@ -675,7 +798,11 @@ export default function GroupDetail() {
                             </div>
                           </td>
                           {calendarDays.map((day, dayIndex) => {
-                            const dateStr = format(day, 'yyyy-MM-dd');
+                            // Use local date string to match database (Philippines time)
+                            const year = day.getFullYear();
+                            const month = String(day.getMonth() + 1).padStart(2, '0');
+                            const date = String(day.getDate()).padStart(2, '0');
+                            const dateStr = `${year}-${month}-${date}`;
                             const isSubmitted = memberDevotions[dateStr];
                             const isFuture = day > new Date();
                             const isToday = day.toDateString() === new Date().toDateString();
@@ -691,26 +818,14 @@ export default function GroupDetail() {
                                   <div className="w-5 h-5 mx-auto bg-gray-200 rounded" />
                                 ) : isSubmitted ? (
                                   <div className="w-5 h-5 mx-auto bg-green-100 border-2 border-green-500 rounded flex items-center justify-center">
-                                    <Check className="w-3 h-3 text-green-700" />
+                                    <CheckSquare className="w-3 h-3 text-green-700" />
                                   </div>
                                 ) : (
-                                  <div className="w-5 h-5 mx-auto bg-red-50 border-2 border-red-300 rounded flex items-center justify-center">
-                                    <X className="w-3 h-3 text-red-500" />
-                                  </div>
+                                  <div className="w-5 h-5 mx-auto bg-white border border-gray-300 rounded" />
                                 )}
                               </td>
                             );
                           })}
-                          {/* Total Column */}
-                          <td className="sticky right-0 z-10 bg-white border-b border-gray-200 p-3 text-center">
-                            <div className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold ${
-                              totalDevotions > 0 
-                                ? 'bg-green-100 text-green-700' 
-                                : 'bg-gray-100 text-gray-400'
-                            }`}>
-                              {totalDevotions}
-                            </div>
-                          </td>
                         </tr>
                       );
                     })
@@ -724,7 +839,7 @@ export default function GroupDetail() {
           <Modal
             isOpen={showAddLeaderModal}
             onClose={() => setShowAddLeaderModal(false)}
-            title="Add Co-Leader"
+            title="Add Leader"
           >
             <div className="space-y-4">
               {/* Search Input */}
@@ -782,6 +897,71 @@ export default function GroupDetail() {
                           Add
                         </Button>
                       )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </Modal>
+
+          {/* Add Member Modal */}
+          <Modal
+            isOpen={showAddMemberModal}
+            onClose={() => setShowAddMemberModal(false)}
+            title="Add Member"
+          >
+            <div className="space-y-4">
+              {/* Search Input */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search by name or email..."
+                  className="input-field pl-9"
+                  value={memberSearchInput}
+                  onChange={(e) => setMemberSearchInput(e.target.value)}
+                  autoFocus
+                />
+              </div>
+
+              {/* Modal Error */}
+              {memberModalError && (
+                <div className="p-2 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-xs text-red-700">{memberModalError}</p>
+                </div>
+              )}
+
+              {/* Available Members List */}
+              <div className="max-h-64 overflow-y-auto scrollbar-thin space-y-2">
+                {filteredAvailableMembers.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-4">
+                    {memberSearchInput ? 'No users found' : 'No users available'}
+                  </p>
+                ) : (
+                  filteredAvailableMembers.map((member) => (
+                    <div
+                      key={member.id}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-xs font-semibold text-green-700">
+                          {(member.first_name || '?')[0]}{(member.last_name || '?')[0]}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">
+                            {member.first_name} {member.last_name}
+                          </p>
+                          <p className="text-xs text-gray-500">{member.email}</p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="primary"
+                        className="text-xs py-1.5 px-3"
+                        loading={addingMember}
+                        onClick={() => handleAddMember(member.id)}
+                      >
+                        Add
+                      </Button>
                     </div>
                   ))
                 )}

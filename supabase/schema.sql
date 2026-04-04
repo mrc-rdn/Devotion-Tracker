@@ -18,29 +18,23 @@ CREATE TABLE IF NOT EXISTS groups (
 );
 
 -- =============================================
--- 1b. GROUP_LEADERS TABLE (join table)
+-- 1b. GROUP_MEMBERS TABLE (join table for many-to-many)
 -- =============================================
-CREATE TABLE IF NOT EXISTS group_leaders (
+CREATE TABLE IF NOT EXISTS group_members (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-  leader_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  
-  -- Prevent duplicate leader assignments
-  CONSTRAINT unique_group_leader UNIQUE (group_id, leader_id),
-  -- Prevent assigning non-leaders
-  CONSTRAINT valid_leader CHECK (
-    EXISTS (
-      SELECT 1 FROM profiles 
-      WHERE profiles.id = leader_id 
-      AND profiles.role IN ('leader', 'admin')
-    )
-  )
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('leader', 'member')) DEFAULT 'member',
+  joined_at TIMESTAMPTZ DEFAULT NOW(),
+
+  -- Prevent duplicate memberships
+  CONSTRAINT unique_group_membership UNIQUE (group_id, user_id)
 );
 
 -- Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_group_leaders_group ON group_leaders(group_id);
-CREATE INDEX IF NOT EXISTS idx_group_leaders_leader ON group_leaders(leader_id);
+CREATE INDEX IF NOT EXISTS idx_group_members_group ON group_members(group_id);
+CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_group_members_role ON group_members(role);
 
 -- =============================================
 -- 2. PROFILES TABLE (linked to Supabase Auth)
@@ -51,14 +45,12 @@ CREATE TABLE IF NOT EXISTS profiles (
   last_name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   role TEXT NOT NULL CHECK (role IN ('member', 'leader', 'admin')),
-  group_id UUID REFERENCES groups(id) ON DELETE SET NULL,
   avatar_url TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Index for faster group lookups
-CREATE INDEX IF NOT EXISTS idx_profiles_group_id ON profiles(group_id);
+-- Index for faster role lookups
 CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles(role);
 
 -- =============================================
@@ -304,10 +296,10 @@ CREATE POLICY "Leaders can view group devotions"
   ON devotions FOR SELECT
   USING (
     EXISTS (
-      SELECT 1 FROM profiles
-      WHERE profiles.id = auth.uid()
-        AND profiles.role = 'leader'
-        AND profiles.group_id = devotions.group_id
+      SELECT 1 FROM group_members gm
+      WHERE gm.user_id = auth.uid()
+        AND gm.role = 'leader'
+        AND gm.group_id = devotions.group_id
     )
   );
 
@@ -325,7 +317,11 @@ CREATE POLICY "Users can insert own devotions"
   ON devotions FOR INSERT
   WITH CHECK (
     auth.uid() = user_id
-    AND group_id = (SELECT group_id FROM profiles WHERE id = auth.uid())
+    AND EXISTS (
+      SELECT 1 FROM group_members gm
+      WHERE gm.user_id = auth.uid()
+        AND gm.group_id = devotions.group_id
+    )
   );
 
 -- Leaders can insert devotions (for their own tracking)
@@ -333,7 +329,11 @@ CREATE POLICY "Leaders can insert own devotions"
   ON devotions FOR INSERT
   WITH CHECK (
     auth.uid() = user_id
-    AND group_id = (SELECT group_id FROM profiles WHERE id = auth.uid())
+    AND EXISTS (
+      SELECT 1 FROM group_members gm
+      WHERE gm.user_id = auth.uid()
+        AND gm.group_id = devotions.group_id
+    )
   );
 
 -- Users can update their own devotions

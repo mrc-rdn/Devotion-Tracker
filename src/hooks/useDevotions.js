@@ -51,16 +51,16 @@ export function useDevotions(year, month) {
     if (!user) return;
 
     try {
-      // Get user's profile for group_id
+      // Get user's group memberships
       const { supabase } = await import('../lib/supabase');
-      const { data: profile } = await supabase
-        .from('profiles')
+      const { data: memberships } = await supabase
+        .from('group_members')
         .select('group_id')
-        .eq('id', user.id)
-        .single();
+        .eq('user_id', user.id)
+        .limit(1);
 
-      if (profile?.group_id) {
-        const data = await getLeaderboard(profile.group_id);
+      if (memberships && memberships.length > 0) {
+        const data = await getLeaderboard(memberships[0].group_id);
         setLeaderboard(data);
       }
     } catch (err) {
