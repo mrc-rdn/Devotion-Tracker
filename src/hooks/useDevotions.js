@@ -1,0 +1,129 @@
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  getDevotionsForMonth,
+  submitDevotion as submitDevotionService,
+  getDevotionStats,
+  getLeaderboard,
+} from '../services/devotions.service';
+import { format } from 'date-fns';
+
+export function useDevotions(year, month) {
+  const { user } = useAuth();
+  const [devotions, setDevotions] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Fetch devotions for the given month
+  const fetchDevotions = useCallback(async () => {
+    if (!user) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const data = await getDevotionsForMonth(user.id, year, month);
+      setDevotions(data);
+    } catch (err) {
+      console.error('Failed to fetch devotions:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, year, month]);
+
+  // Fetch stats
+  const fetchStats = useCallback(async () => {
+    if (!user) return;
+
+    try {
+      const data = await getDevotionStats(user.id);
+      setStats(data);
+    } catch (err) {
+      console.error('Failed to fetch stats:', err);
+    }
+  }, [user]);
+
+  // Fetch leaderboard (if user has a group)
+  const fetchLeaderboard = useCallback(async () => {
+    if (!user) return;
+
+    try {
+      // Get user's profile for group_id
+      const { supabase } = await import('../lib/supabase');
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('group_id')
+        .eq('id', user.id)
+        .single();
+
+      if (profile?.group_id) {
+        const data = await getLeaderboard(profile.group_id);
+        setLeaderboard(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch leaderboard:', err);
+    }
+  }, [user]);
+
+  // Submit a devotion
+  async function submitDevotion(imageFile, notes = '') {
+    if (!user) throw new Error('Not authenticated');
+
+    const data = await submitDevotionService(imageFile, notes);
+
+    // Optimistic update: immediately add the new devotion to state
+    const serverDate = format(new Date(), 'yyyy-MM-dd');
+    setDevotions(prev => {
+      // Check if this date already exists (avoid duplicates)
+      const exists = prev.some(d => d.devotion_date === serverDate);
+      if (exists) return prev;
+      
+      return [...prev, { 
+        id: data.id, 
+        devotion_date: serverDate, 
+        image_url: data.image_url,
+        notes: data.notes,
+        created_at: data.created_at 
+      }];
+    });
+
+    // Refresh data in background (don't await, don't block)
+    fetchDevotions().catch(err => console.error('Failed to refresh devotions:', err));
+    fetchStats().catch(err => console.error('Failed to refresh stats:', err));
+    fetchLeaderboard().catch(err => console.error('Failed to refresh leaderboard:', err));
+
+    return data;
+  }
+
+  // Check if a specific date has a devotion
+  function hasDevotionOn(date) {
+    const devotionDate = format(date, 'yyyy-MM-dd');
+    return devotions.some((d) => d.devotion_date === devotionDate);
+  }
+
+  // Get all devotion dates as a Set for fast lookup
+  function getDevotionDates() {
+    return new Set(devotions.map((d) => d.devotion_date));
+  }
+
+  useEffect(() => {
+    fetchDevotions();
+    fetchStats();
+    fetchLeaderboard();
+  }, [fetchDevotions, fetchStats, fetchLeaderboard]);
+
+  return {
+    devotions,
+    stats,
+    leaderboard,
+    loading,
+    error,
+    submitDevotion,
+    hasDevotionOn,
+    getDevotionDates,
+    refetch: fetchDevotions,
+  };
+}
