@@ -9,7 +9,7 @@ import {
 } from '../services/groups.service';
 import { TIME_FILTERS, TIME_FILTER_LABELS } from '../lib/constants';
 
-export default function GroupLeaderboard() {
+export default function GroupLeaderboard({ userGroups = [], selectedGroupId, onSelectGroup }) {
   const { profile } = useAuth();
   const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17,67 +17,127 @@ export default function GroupLeaderboard() {
   const [expanded, setExpanded] = useState(false);
   const channelRef = useRef(null);
 
-  // Calculate date range
+  // Debug: Log props received
+  useEffect(() => {
+    console.log('📦 GroupLeaderboard props:', { 
+      selectedGroupId, 
+      profileGroupId: profile?.groupId,
+      userGroupsCount: userGroups.length,
+      userGroups: userGroups.map(g => ({ id: g.id, name: g.name }))
+    });
+  }, [selectedGroupId, profile?.groupId, userGroups]);
+
+  // Use prop directly, fallback to profile groupId
+  const groupId = selectedGroupId ?? profile?.groupId ?? null;
+
   function getDateRange() {
     const now = new Date();
-    let startDate;
+    let startDateStr, endDateStr;
+
+    // Get current date components in local time
+    const year = now.getFullYear();
+    const month = now.getMonth(); // 0-indexed
+    const day = now.getDate();
+    const dayOfWeek = now.getDay(); // 0 = Sunday
+
     if (timeFilter === TIME_FILTERS.WEEKLY) {
-      // Monday to Sunday (Monday = 1, Sunday = 0)
-      const dayOfWeek = now.getDay();
+      // Calculate days since Monday
       const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-      startDate = new Date(now);
-      startDate.setDate(now.getDate() - daysSinceMonday);
+      const monday = new Date(now);
+      monday.setDate(day - daysSinceMonday);
+      
+      // Format as YYYY-MM-DD directly
+      const startYear = monday.getFullYear();
+      const startMonth = String(monday.getMonth() + 1).padStart(2, '0');
+      const startDay = String(monday.getDate()).padStart(2, '0');
+      startDateStr = `${startYear}-${startMonth}-${startDay}`;
+      
+      const endYear = now.getFullYear();
+      const endMonth = String(now.getMonth() + 1).padStart(2, '0');
+      const endDay = String(now.getDate()).padStart(2, '0');
+      endDateStr = `${endYear}-${endMonth}-${endDay}`;
     } else if (timeFilter === TIME_FILTERS.MONTHLY) {
-      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      // First of month
+      startDateStr = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+      // Last day of month
+      const lastDay = new Date(year, month + 1, 0).getDate();
+      endDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
     } else {
-      startDate = new Date(now.getFullYear(), 0, 1);
+      // Yearly
+      startDateStr = `${year}-01-01`;
+      endDateStr = `${year}-12-31`;
     }
-    return { startDate, endDate: now };
+
+    return { startDateStr, endDateStr };
   }
 
-  // Fetch leaderboard
   async function fetchLeaderboard() {
-    if (!profile?.groupId) return;
+    if (!groupId) {
+      console.log('⚠️ No groupId provided to GroupLeaderboard');
+      setLeaderboard([]);
+      setLoading(false);
+      return;
+    }
 
+    console.log('🔍 Fetching leaderboard for group:', groupId);
     setLoading(true);
     try {
-      const { startDate, endDate } = getDateRange();
-      const data = await getGroupLeaderboard(profile.groupId, startDate, endDate);
-      setLeaderboard(data);
+      const { startDateStr, endDateStr } = getDateRange();
+      console.log('📅 Date range (strings):', startDateStr, 'to', endDateStr);
+      
+      // Pass date strings directly to service
+      const data = await getGroupLeaderboard(groupId, startDateStr, endDateStr);
+      
+      console.log('✅ Leaderboard data fetched:', data?.length, 'members');
+      if (data && data.length > 0) {
+        console.log('📊 Sample member:', data[0]);
+      }
+      setLeaderboard(data || []);
     } catch (err) {
-      console.error('Failed to fetch leaderboard:', err);
+      console.error('❌ Failed to fetch leaderboard:', err);
+      setLeaderboard([]);
     } finally {
       setLoading(false);
     }
   }
 
-  // Setup realtime subscription
+  // Fetch data when groupId or timeFilter changes
   useEffect(() => {
-    if (!profile?.groupId) return;
-
-    // Initial fetch
+    if (!groupId) {
+      setLeaderboard([]);
+      setLoading(false);
+      return;
+    }
+    
     fetchLeaderboard();
-
+    
     // Subscribe to realtime devotion changes
-    channelRef.current = subscribeToGroupDevotions(
-      profile.groupId,
-      () => {
-        // Refresh leaderboard when a new devotion is submitted
-        fetchLeaderboard();
-      }
-    );
+    channelRef.current = subscribeToGroupDevotions(groupId, () => {
+      console.log('🔄 Realtime update triggered');
+      fetchLeaderboard();
+    });
 
     return () => {
       unsubscribeChannel(channelRef.current);
     };
-  }, [profile?.groupId, timeFilter]);
+  }, [groupId, timeFilter]);
 
-  // Re-fetch when time filter changes
-  useEffect(() => {
-    fetchLeaderboard();
-  }, [timeFilter]);
+  function handleGroupChange(e) {
+    const newGroupId = e.target.value || null;
+    console.log('🔄 Group changed to:', newGroupId);
+    if (onSelectGroup) {
+      onSelectGroup(newGroupId);
+    }
+  }
 
-  // Get medal color
+  // Get current group name
+  const currentGroup = userGroups.find(g => g.id === groupId);
+  const groupName = currentGroup?.name || profile?.groupName || 'Your Group';
+
+  const displayData = expanded ? leaderboard : leaderboard.slice(0, 5);
+  const totalDevotions = leaderboard.reduce((sum, m) => sum + m.devotionCount, 0);
+  const activeMembers = leaderboard.filter((m) => m.devotionCount > 0).length;
+
   function getMedalColor(index) {
     if (index === 0) return 'bg-yellow-100 text-yellow-700 border-2 border-yellow-300';
     if (index === 1) return 'bg-gray-100 text-gray-600 border-2 border-gray-300';
@@ -85,20 +145,29 @@ export default function GroupLeaderboard() {
     return 'bg-gray-50 text-gray-500 border border-gray-200';
   }
 
-  // Get role badge color
   function getRoleBadge(role) {
     return role === 'leader' ? 'blue' : 'green';
   }
 
-  const displayData = expanded ? leaderboard : leaderboard.slice(0, 5);
-  const totalDevotions = leaderboard.reduce((sum, m) => sum + m.devotionCount, 0);
-  const activeMembers = leaderboard.filter((m) => m.devotionCount > 0).length;
+  if (!groupId) {
+    return (
+      <Card>
+        <div className="text-center py-8">
+          <Trophy className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+          <p className="text-sm font-medium text-gray-900">No group selected</p>
+          <p className="text-xs text-gray-500 mt-1">
+            Select a group to view the leaderboard
+          </p>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card>
       <CardHeader
         title="Group Leaderboard"
-        subtitle={`${profile?.groups?.name || 'Your Group'} — ${TIME_FILTER_LABELS[timeFilter]}`}
+        subtitle={`${groupName} — ${TIME_FILTER_LABELS[timeFilter]}`}
         action={
           <button
             onClick={fetchLeaderboard}
@@ -110,48 +179,64 @@ export default function GroupLeaderboard() {
         }
       />
 
-      {/* Time Filter */}
-      <div className="flex items-center gap-2 mb-4">
-        {Object.values(TIME_FILTERS).map((filter) => (
-          <button
-            key={filter}
-            onClick={() => setTimeFilter(filter)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              timeFilter === filter
-                ? 'bg-primary-600 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
+      {/* Filters */}
+      <div className="px-6 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+        {/* Time Filter */}
+        <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded">
+          {Object.values(TIME_FILTERS).map((filter) => (
+            <button
+              key={filter}
+              onClick={() => setTimeFilter(filter)}
+              className={`px-3 py-1 rounded text-[10px] uppercase tracking-wider font-bold transition-all ${
+                timeFilter === filter
+                  ? 'bg-white text-primary-700 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {TIME_FILTER_LABELS[filter]}
+            </button>
+          ))}
+        </div>
+
+        {/* Group Filter */}
+        {userGroups.length > 1 && (
+          <select
+            value={groupId || ''}
+            onChange={handleGroupChange}
+            className="bg-gray-50 border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 rounded"
           >
-            {TIME_FILTER_LABELS[filter]}
-          </button>
-        ))}
+            {userGroups.map(group => (
+              <option key={group.id} value={group.id}>{group.name}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Stats Summary */}
-      <div className="grid grid-cols-3 gap-3 mb-4">
-        <div className="text-center p-3 bg-gray-50 rounded-lg">
+      <div className="grid grid-cols-3 gap-3 p-4 border-b border-gray-100 bg-gray-50/50">
+        <div className="text-center">
           <p className="text-lg font-bold text-gray-900">{leaderboard.length}</p>
-          <p className="text-xs text-gray-500">Members</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wide">Members</p>
         </div>
-        <div className="text-center p-3 bg-gray-50 rounded-lg">
+        <div className="text-center">
           <p className="text-lg font-bold text-green-600">{totalDevotions}</p>
-          <p className="text-xs text-gray-500">Devotions</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wide">Devotions</p>
         </div>
-        <div className="text-center p-3 bg-gray-50 rounded-lg">
+        <div className="text-center">
           <p className="text-lg font-bold text-primary-600">{activeMembers}</p>
-          <p className="text-xs text-gray-500">Active</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wide">Active</p>
         </div>
       </div>
 
       {/* Leaderboard List */}
       {loading ? (
-        <div className="space-y-3">
+        <div className="space-y-3 p-4">
           {[1, 2, 3, 4, 5].map((i) => (
             <Skeleton key={i} className="h-14 w-full" />
           ))}
         </div>
       ) : leaderboard.length > 0 ? (
-        <div>
+        <div className="p-2">
           {displayData.map((member, index) => {
             const isCurrentUser = profile?.id === member.id;
             return (
@@ -161,7 +246,6 @@ export default function GroupLeaderboard() {
                   isCurrentUser ? 'bg-primary-50 border border-primary-200' : 'hover:bg-gray-50'
                 }`}
               >
-                {/* Rank / Medal */}
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${getMedalColor(index)}`}>
                   {index < 3 ? (
                     <Trophy className="w-5 h-5" />
@@ -170,7 +254,6 @@ export default function GroupLeaderboard() {
                   )}
                 </div>
 
-                {/* Member Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-semibold text-gray-900 truncate">
@@ -188,7 +271,6 @@ export default function GroupLeaderboard() {
                   </Badge>
                 </div>
 
-                {/* Devotion Count */}
                 <div className="text-right">
                   <p className="text-lg font-bold text-gray-900">{member.devotionCount}</p>
                   <p className="text-xs text-gray-500">devotions</p>
@@ -197,7 +279,6 @@ export default function GroupLeaderboard() {
             );
           })}
 
-          {/* Expand/Collapse */}
           {leaderboard.length > 5 && (
             <button
               onClick={() => setExpanded(!expanded)}

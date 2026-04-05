@@ -335,6 +335,8 @@ export async function getAvailableLeaders(currentGroupId = null) {
  * Get leaderboard for a group
  */
 export async function getGroupLeaderboard(groupId, startDate, endDate) {
+  console.log('🔍 getGroupLeaderboard called with:', { groupId, startDate, endDate });
+  
   // Get all group members
   const { data: members, error: membersError } = await supabase
     .from('group_members')
@@ -345,19 +347,50 @@ export async function getGroupLeaderboard(groupId, startDate, endDate) {
     .eq('group_id', groupId);
 
   if (membersError) {
-    console.error('Failed to fetch group members:', membersError.message);
+    console.error('❌ Failed to fetch group members:', membersError.message);
     return [];
   }
+
+  console.log('👥 Group members fetched:', members?.length);
+  console.log('📋 Members details:', members.map(m => ({
+    user_id: m.user_id,
+    profile_id: m.profiles?.id,
+    name: `${m.profiles?.first_name} ${m.profiles?.last_name}`
+  })));
 
   // Get devotion counts
   const leaderboard = await Promise.all(
     (members || []).map(async (member) => {
-      const { count } = await supabase
+      const userId = member.user_id;
+      console.log(`📊 Querying devotions for user_id: ${userId}, name: ${member.profiles?.first_name} ${member.profiles?.last_name}, date range: ${startDate} to ${endDate}`);
+      
+      // Try a direct query to see what's in the database
+      const { data: allDevotions, error: allError } = await supabase
         .from('devotions')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', member.user_id)
-        .gte('devotion_date', formatDateISO(startDate))
-        .lte('devotion_date', formatDateISO(endDate));
+        .select('id, devotion_date')
+        .eq('user_id', userId)
+        .limit(10);
+      
+      if (allError) {
+        console.error(`❌ Error fetching all devotions for user ${userId}:`, allError.message);
+      } else {
+        console.log(`📝 ALL devotions for user ${userId}:`, allDevotions?.map(d => d.devotion_date));
+      }
+      
+      // Now try the filtered query
+      const { count, error, data } = await supabase
+        .from('devotions')
+        .select('id, devotion_date', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .gte('devotion_date', startDate)
+        .lte('devotion_date', endDate);
+
+      if (error) {
+        console.error(`❌ Error counting devotions for user ${userId}:`, error.message);
+      } else {
+        console.log(`✅ Filtered devotion count for user ${userId} (${member.profiles?.first_name}):`, count);
+        console.log(`📝 Filtered data returned:`, data);
+      }
 
       return {
         id: member.profiles.id,
@@ -368,6 +401,8 @@ export async function getGroupLeaderboard(groupId, startDate, endDate) {
       };
     })
   );
+
+  console.log('🏆 Final leaderboard:', leaderboard);
 
   // Sort by devotion count descending
   return leaderboard.sort((a, b) => b.devotionCount - a.devotionCount);

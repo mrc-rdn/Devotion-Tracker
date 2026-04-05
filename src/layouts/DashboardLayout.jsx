@@ -158,7 +158,7 @@ function getNavItems(role) {
   ];
 
   if (role === 'member') {
-    baseItems.push({ href: '/member/group', icon: UserPlus, label: 'Fellowship' });
+    baseItems.push({ href: '/member/group', icon: UserPlus, label: 'My Group' });
   } else if (role === 'leader') {
     baseItems.push({ href: '/leader/group', icon: FolderPlus, label: 'Manage Group' });
   }

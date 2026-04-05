@@ -1,18 +1,36 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Calendar, TrendingUp, Award, Users, ChevronRight } from 'lucide-react';
 import { useDevotions } from '../hooks/useDevotions';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardHeader, StatCard, Skeleton } from '../components/ui';
 import { TIME_FILTERS, TIME_FILTER_LABELS } from '../lib/constants';
+import { getUserGroups } from '../services/groups.service';
 import GroupLeaderboard from './GroupLeaderboard';
 
 export default function MemberDashboard() {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const { stats, loading } = useDevotions(
     new Date().getFullYear(),
     new Date().getMonth()
   );
   const [timeFilter, setTimeFilter] = useState(TIME_FILTERS.MONTHLY);
+  const [selectedGroupId, setSelectedGroupId] = useState(profile?.groupId || null);
+  const [userGroups, setUserGroups] = useState([]);
+
+  // Fetch user's groups on mount
+  useEffect(() => {
+    async function fetchGroups() {
+      if (!user?.id) return;
+      const groups = await getUserGroups(user.id);
+      setUserGroups(groups);
+      // Set default selected group if not already set
+      if (!selectedGroupId && groups.length > 0) {
+        setSelectedGroupId(groups[0].id);
+      }
+    }
+    console.log('heyheyeheye', userGroups)
+    fetchGroups();
+  }, [user?.id]);
 
   function getStatValue(statKey) {
     if (!stats) return 0;
@@ -23,6 +41,10 @@ export default function MemberDashboard() {
     if (!stats) return 0;
     return stats.weekly > 0 ? stats.weekly : 0;
   }
+
+  // Get current group name
+  const currentGroup = userGroups.find(g => g.id === selectedGroupId);
+  const groupName = currentGroup?.name || profile?.groupName || 'your fellowship';
 
   return (
     <div className="max-w-7xl mx-auto space-y-10 pb-12">
@@ -39,8 +61,9 @@ export default function MemberDashboard() {
           <p className="text-blue-100/70 mt-3 font-light tracking-wide max-w-md">
             "Let us not grow weary in doing good..." Track your daily devotion journey and remain steadfast.
           </p>
+          
         </div>
-        
+
         {/* Decorative Background Elements from Slides */}
         <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
           <div className="flex gap-1">
@@ -54,22 +77,25 @@ export default function MemberDashboard() {
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-200 pb-4">
           <h2 className="text-xs uppercase tracking-[0.2em] font-black text-slate-400">Activity Overview</h2>
-          
-          {/* Time Filter - Styled as Slide Navigation */}
-          <div className="flex bg-gray-100 p-1 rounded-sm">
-            {Object.values(TIME_FILTERS).map((filter) => (
-              <button
-                key={filter}
-                onClick={() => setTimeFilter(filter)}
-                className={`px-4 py-1.5 text-[10px] uppercase tracking-widest font-bold transition-all ${
-                  timeFilter === filter
-                    ? 'bg-[#1a365d] text-white shadow-md'
-                    : 'text-slate-500 hover:text-[#1a365d]'
-                }`}
-              >
-                {TIME_FILTER_LABELS[filter]}
-              </button>
-            ))}
+
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Time Filter - Styled as Slide Navigation */}
+            <div className="flex bg-gray-100 p-1 rounded-sm">
+              {Object.values(TIME_FILTERS).map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setTimeFilter(filter)}
+                  className={`px-4 py-1.5 text-[10px] uppercase tracking-widest font-bold transition-all ${
+                    timeFilter === filter
+                      ? 'bg-[#1a365d] text-white shadow-md'
+                      : 'text-slate-500 hover:text-[#1a365d]'
+                  }`}
+                >
+                  {TIME_FILTER_LABELS[filter]}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -81,29 +107,29 @@ export default function MemberDashboard() {
             ))
           ) : (
             <>
-              <StatCardComponent 
-                label="Weekly Focus" 
-                value={getStatValue('weekly')} 
-                icon={Calendar} 
-                borderClass="border-blue-500" 
+              <StatCardComponent
+                label="Weekly Focus"
+                value={getStatValue('weekly')}
+                icon={Calendar}
+                borderClass="border-blue-500"
               />
-              <StatCardComponent 
-                label="Monthly Growth" 
-                value={getStatValue('monthly')} 
-                icon={TrendingUp} 
-                borderClass="border-emerald-500" 
+              <StatCardComponent
+                label="Monthly Growth"
+                value={getStatValue('monthly')}
+                icon={TrendingUp}
+                borderClass="border-emerald-500"
               />
-              <StatCardComponent 
-                label="Yearly Faith" 
-                value={getStatValue('yearly')} 
-                icon={Award} 
-                borderClass="border-indigo-500" 
+              <StatCardComponent
+                label="Yearly Faith"
+                value={getStatValue('yearly')}
+                icon={Award}
+                borderClass="border-indigo-500"
               />
-              <StatCardComponent 
-                label="Current Streak" 
-                value={`${calculateStreak()} Days`} 
-                icon={Users} 
-                borderClass="border-amber-500" 
+              <StatCardComponent
+                label="Current Streak"
+                value={`${calculateStreak()} Days`}
+                icon={Users}
+                borderClass="border-amber-500"
               />
             </>
           )}
@@ -113,12 +139,16 @@ export default function MemberDashboard() {
       {/* Leaderboard - Card Design from Slide 2 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
-          {profile?.groupId ? (
+          {selectedGroupId ? (
             <div className="bg-white border border-gray-100 shadow-sm rounded-sm overflow-hidden">
               <div className="bg-slate-50 px-6 py-4 border-b border-gray-100">
                 <h3 className="text-xs uppercase tracking-[0.2em] font-black text-[#1a365d]">Group Fellowship</h3>
               </div>
-              <GroupLeaderboard />
+              <GroupLeaderboard 
+                userGroups={userGroups}
+                selectedGroupId={selectedGroupId}
+                onSelectGroup={setSelectedGroupId}
+              />
             </div>
           ) : (
             <div className="bg-white border-2 border-dashed border-gray-200 rounded-sm p-12 text-center">

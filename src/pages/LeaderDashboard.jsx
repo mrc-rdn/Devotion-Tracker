@@ -5,28 +5,44 @@ import { useDevotions } from '../hooks/useDevotions';
 import { Card, StatCard } from '../components/ui';
 import { TIME_FILTERS, TIME_FILTER_LABELS } from '../lib/constants';
 import { getDevotionCount } from '../services/devotions.service';
-import { getGroupMembers } from '../services/groups.service';
+import { getGroupMembers, getLeaderGroups } from '../services/groups.service';
 import GroupLeaderboard from './GroupLeaderboard';
 
 export default function LeaderDashboard() {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const [timeFilter, setTimeFilter] = useState(TIME_FILTERS.MONTHLY);
+  const [selectedGroupId, setSelectedGroupId] = useState(profile?.groupId || null);
   const [memberFilter, setMemberFilter] = useState('all');
   const [groupMembers, setGroupMembers] = useState([]);
   const [memberStats, setMemberStats] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [leaderGroups, setLeaderGroups] = useState([]);
+
+  // Fetch leader's groups on mount
+  useEffect(() => {
+    async function fetchGroups() {
+      if (!user?.id) return;
+      const groups = await getLeaderGroups(user.id);
+      setLeaderGroups(groups);
+      // Set default selected group if not already set
+      if (!selectedGroupId && groups.length > 0) {
+        setSelectedGroupId(groups[0].id);
+      }
+    }
+    fetchGroups();
+  }, [user?.id]);
 
   async function fetchGroupData() {
-    if (!profile?.groupId) return;
+    if (!selectedGroupId) return;
     setLoading(true);
     try {
-      const members = await getGroupMembers(profile.groupId);
+      const members = await getGroupMembers(selectedGroupId);
       setGroupMembers(members || []);
       const now = new Date();
-      let startDate = timeFilter === TIME_FILTERS.WEEKLY 
-        ? new Date(now.setDate(now.getDate() - now.getDay())) 
+      let startDate = timeFilter === TIME_FILTERS.WEEKLY
+        ? new Date(now.setDate(now.getDate() - now.getDay()))
         : new Date(now.getFullYear(), now.getMonth(), 1);
-      
+
       const stats = await Promise.all(members.map(async (member) => {
         const count = await getDevotionCount(member.id, startDate, now);
         return { ...member, devotionCount: count };
@@ -39,22 +55,34 @@ export default function LeaderDashboard() {
     }
   }
 
-  useEffect(() => { if (profile?.groupId) fetchGroupData(); }, [profile?.groupId, timeFilter]);
+  useEffect(() => { 
+    if (selectedGroupId) fetchGroupData(); 
+  }, [selectedGroupId, timeFilter]);
+
+  // Reset member filter when group changes
+  useEffect(() => {
+    setMemberFilter('all');
+  }, [selectedGroupId]);
 
   const filteredStats = memberFilter === 'all' ? memberStats : memberStats.filter(m => m.id === memberFilter);
   const totalDevotions = filteredStats.reduce((sum, m) => sum + m.devotionCount, 0);
   const activeMembers = filteredStats.filter(m => m.devotionCount > 0).length;
+
+  // Get current group name
+  const currentGroup = leaderGroups.find(g => g.id === selectedGroupId);
+  const groupName = currentGroup?.name || profile?.groupName || 'your fellowship';
 
   return (
     <div className="max-w-7xl mx-auto space-y-8 ">
       {/* Unified Header Style */}
       <div className="relative overflow-hidden bg-[#1a365d] rounded-sm p-8 text-white shadow-lg">
         <h1 className="text-3xl font-extrabold uppercase tracking-tight">Leader Dashboard</h1>
-        <p className="text-blue-100/70 mt-2 text-sm">Overseeing the growth of {profile?.groupName || 'your fellowship'}</p>
+        <p className="text-blue-100/70 mt-2 text-sm">Overseeing the growth of {groupName}</p>
       </div>
 
       {/* Unified Filter Bar */}
       <div className="flex flex-col md:flex-row gap-4 bg-white p-4 border border-slate-100 shadow-sm rounded-sm">
+        {/* Time Filter */}
         <div className="flex bg-slate-100 p-1 rounded-sm">
           {Object.values(TIME_FILTERS).map((filter) => (
             <button
@@ -68,9 +96,25 @@ export default function LeaderDashboard() {
             </button>
           ))}
         </div>
-        
-        <select 
+
+        {/* Group Filter */}
+        {leaderGroups.length > 1 && (
+          <select
+            value={selectedGroupId || ''}
+            onChange={(e) => setSelectedGroupId(e.target.value || null)}
+            className="bg-slate-50 border border-slate-200 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-slate-600 focus:outline-none"
+          >
+            <option value="">All Groups</option>
+            {leaderGroups.map(group => (
+              <option key={group.id} value={group.id}>{group.name}</option>
+            ))}
+          </select>
+        )}
+
+        {/* Member Filter */}
+        <select
           onChange={(e) => setMemberFilter(e.target.value)}
+          value={memberFilter}
           className="bg-slate-50 border border-slate-200 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-slate-600 focus:outline-none"
         >
           <option value="all">All Members</option>
@@ -87,13 +131,17 @@ export default function LeaderDashboard() {
       </div>
 
       {/* Leaderboard Section */}
-      <div className='w-full flex flex-col sm:flex-rows gap-10'>
-        <div className="bg-white border w-full md:w-4/12 border-slate-100 shadow-sm rounded-sm">
+      <div className='w-full flex flex-row md:flex-row gap-10'>
+        <div className="bg-white border w-full md:w-8/12 border-slate-100 shadow-sm rounded-sm">
           <div className="px-6 py-4 border-b border-slate-100">
             <h3 className="text-xs uppercase tracking-[0.2em] font-black text-[#1a365d]">Group Fellowship Rankings</h3>
           </div>
           <div className="p-2">
-            <GroupLeaderboard />
+            <GroupLeaderboard 
+              userGroups={leaderGroups}
+              selectedGroupId={selectedGroupId}
+              onSelectGroup={setSelectedGroupId}
+            />
           </div>
         </div>
       {/* Sidebar Space for Scripture - Mimicking Slide 5 */}
