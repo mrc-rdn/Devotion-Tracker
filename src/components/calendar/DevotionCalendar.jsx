@@ -1,12 +1,12 @@
 import { useState, useRef, useCallback } from 'react';
-import { 
-  ChevronLeft, 
-  ChevronRight, 
-  X, 
-  AlertCircle, 
-  CheckCircle, 
-  Upload, 
-  Camera, 
+import {
+  ChevronLeft,
+  ChevronRight,
+  X,
+  AlertCircle,
+  CheckCircle,
+  Upload,
+  Camera,
   Edit3,
   Image as ImageIcon,
   Loader2
@@ -22,6 +22,7 @@ import { MAX_IMAGE_SIZE_MB } from '../../lib/constants';
 import { format } from 'date-fns';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
+import CameraView from './CameraView';
 
 export default function DevotionCalendar() {
   const today = new Date();
@@ -74,7 +75,7 @@ export default function DevotionCalendar() {
   function handleDateClick(date) {
     const isFuture = date > new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
     if (isFuture) return; // Don't allow future dates
-    
+
     setSelectedDate(date);
     setEntryType(null);
     setModalOpen(true);
@@ -196,23 +197,19 @@ export default function DevotionCalendar() {
 
 function DevotionEntryModal({ date, onClose, onSubmit, onSubmitText, loading, error, entryType, onEntryTypeChange }) {
   const dateStr = format(date, 'MMMM d, yyyy');
-  const cameraInputRef = useRef(null);
   const fileInputRef = useRef(null);
 
   // Upload state
   const [selectedFile, setSelectedFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [notes, setNotes] = useState('');
-  
+
   // Camera state
   const [cameraOpen, setCameraOpen] = useState(false);
-  const [cameraStream, setCameraStream] = useState(null);
-  const [capturedImage, setCapturedImage] = useState(null);
-  const videoRef = useRef(null);
-  
+
   // Text editor state
   const [richText, setRichText] = useState('');
-  
+
   const [submitError, setSubmitError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -256,56 +253,16 @@ function DevotionEntryModal({ date, onClose, onSubmit, onSubmitText, loading, er
     onEntryTypeChange('upload');
   }
 
-  async function openCamera() {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' },
-        audio: false 
-      });
-      
-      setCameraStream(stream);
-      setCameraOpen(true);
-      onEntryTypeChange('capture');
-      
-      // Set video source after a brief delay
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-      }, 100);
-    } catch (err) {
-      setSubmitError('Unable to access camera. Please check permissions.');
-      console.error('Camera error:', err);
-    }
-  }
-
-  function capturePhoto() {
-    if (!videoRef.current) return;
-    
-    const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(videoRef.current, 0, 0);
-    
-    canvas.toBlob((blob) => {
-      if (blob) {
-        const file = new File([blob], `devotion-${Date.now()}.jpg`, { type: 'image/jpeg' });
-        setCapturedImage(URL.createObjectURL(blob));
-        setSelectedFile(file);
-        setPreview(URL.createObjectURL(blob));
-        stopCamera();
-      }
-    }, 'image/jpeg');
-  }
-
-  function stopCamera() {
-    if (cameraStream) {
-      cameraStream.getTracks().forEach(track => track.stop());
-      setCameraStream(null);
-    }
+  function handleCameraCapture(file) {
+    setSelectedFile(file);
+    setPreview(URL.createObjectURL(file));
     setCameraOpen(false);
+    onEntryTypeChange('capture');
+  }
+
+  function closeCamera() {
+    setCameraOpen(false);
+    onEntryTypeChange(null);
   }
 
   async function handleSubmit(e) {
@@ -350,12 +307,10 @@ function DevotionEntryModal({ date, onClose, onSubmit, onSubmitText, loading, er
     }
   }
 
-  // Cleanup camera on unmount
-  useState(() => {
-    return () => {
-      stopCamera();
-    };
-  });
+  // Camera view (full-screen)
+  if (cameraOpen) {
+    return <CameraView onClose={closeCamera} onCapture={handleCameraCapture} />;
+  }
 
   if (success) {
     return (
@@ -366,51 +321,6 @@ function DevotionEntryModal({ date, onClose, onSubmit, onSubmitText, loading, er
             <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
             <h3 className="text-xl font-bold text-gray-900 mb-2">Devotion Submitted!</h3>
             <p className="text-gray-500">Your devotion for {dateStr} has been recorded</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Camera capture view
-  if (cameraOpen && cameraStream) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="fixed inset-0 bg-black/90" />
-        <div className="relative bg-gray-900 rounded-xl shadow-xl w-full max-w-2xl overflow-hidden">
-          {/* Camera Header */}
-          <div className="flex items-center justify-between p-4 bg-gray-800">
-            <h3 className="text-lg font-semibold text-white">Take a Photo</h3>
-            <button
-              onClick={() => {
-                stopCamera();
-                onEntryTypeChange(null);
-              }}
-              className="p-2 rounded-lg hover:bg-gray-700 text-white"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* Video Preview */}
-          <div className="relative aspect-video bg-black">
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className="w-full h-full object-cover"
-            />
-          </div>
-
-          {/* Camera Controls */}
-          <div className="p-6 bg-gray-800 flex items-center justify-center gap-4">
-            <button
-              onClick={capturePhoto}
-              className="w-16 h-16 rounded-full bg-white border-4 border-gray-300 hover:border-white transition-colors flex items-center justify-center"
-            >
-              <div className="w-12 h-12 rounded-full bg-gray-900" />
-            </button>
           </div>
         </div>
       </div>
@@ -455,7 +365,7 @@ function DevotionEntryModal({ date, onClose, onSubmit, onSubmitText, loading, er
 
             {/* Capture from camera */}
             <button
-              onClick={openCamera}
+              onClick={() => setCameraOpen(true)}
               className="flex items-center gap-4 p-4 border-2 border-gray-200 rounded-lg hover:border-primary-500 hover:bg-primary-50 transition-all text-left"
             >
               <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -513,7 +423,6 @@ function DevotionEntryModal({ date, onClose, onSubmit, onSubmitText, loading, er
               onClick={() => {
                 setSelectedFile(null);
                 setPreview(null);
-                setCapturedImage(null);
                 onEntryTypeChange(null);
               }}
               className="p-2 rounded-lg hover:bg-gray-100"
@@ -539,19 +448,17 @@ function DevotionEntryModal({ date, onClose, onSubmit, onSubmitText, loading, er
                   alt="Preview"
                   className="w-full rounded-lg object-contain max-h-64"
                 />
-                {!capturedImage && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedFile(null);
-                      setPreview(null);
-                      onEntryTypeChange(null);
-                    }}
-                    className="absolute top-2 right-2 p-1.5 bg-red-500 rounded-full text-white hover:bg-red-600"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedFile(null);
+                    setPreview(null);
+                    onEntryTypeChange(null);
+                  }}
+                  className="absolute top-2 right-2 p-1.5 bg-red-500 rounded-full text-white hover:bg-red-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             )}
 
