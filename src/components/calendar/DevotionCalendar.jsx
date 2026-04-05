@@ -1,5 +1,16 @@
-import { useState } from 'react';
-import { ChevronLeft, ChevronRight, Upload, X, AlertCircle, CheckCircle } from 'lucide-react';
+import { useState, useRef, useCallback } from 'react';
+import { 
+  ChevronLeft, 
+  ChevronRight, 
+  X, 
+  AlertCircle, 
+  CheckCircle, 
+  Upload, 
+  Camera, 
+  Edit3,
+  Image as ImageIcon,
+  Loader2
+} from 'lucide-react';
 import {
   getCalendarDays,
   getDayNumber,
@@ -9,16 +20,21 @@ import {
 import { useDevotions } from '../../hooks/useDevotions';
 import { MAX_IMAGE_SIZE_MB } from '../../lib/constants';
 import { format } from 'date-fns';
+import ReactQuill from 'react-quill';
+import 'react-quill/dist/quill.snow.css';
 
 export default function DevotionCalendar() {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
-  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [entryType, setEntryType] = useState(null); // 'upload', 'capture', or 'write'
 
   const {
     getDevotionDates,
     submitDevotion,
+    submitTextDevotion,
     loading,
     error,
   } = useDevotions(year, month);
@@ -45,10 +61,9 @@ export default function DevotionCalendar() {
   }
 
   function getDayStatus(date) {
-    // Use local date formatting to avoid timezone issues
     const dateStr = format(date, 'yyyy-MM-dd');
-    const isFuture = date > today;
-    const isPastOrToday = date <= new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const isFuture = date > new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
+    const isPastOrToday = date <= new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
 
     if (isFuture) return 'future';
     if (devotionDates.has(dateStr)) return 'submitted';
@@ -56,11 +71,26 @@ export default function DevotionCalendar() {
     return 'empty';
   }
 
+  function handleDateClick(date) {
+    const isFuture = date > new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
+    if (isFuture) return; // Don't allow future dates
+    
+    setSelectedDate(date);
+    setEntryType(null);
+    setModalOpen(true);
+  }
+
+  function closeModal() {
+    setModalOpen(false);
+    setSelectedDate(null);
+    setEntryType(null);
+  }
+
   return (
     <div>
       {/* Calendar Header */}
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">{getMonthName(new Date(year, month))}</h3>
+        <h3 className="text-lg font-semibold text-gray-900">{getMonthName(new Date(year, month))} {year}</h3>
         <div className="flex items-center gap-2">
           <button
             onClick={prevMonth}
@@ -101,17 +131,22 @@ export default function DevotionCalendar() {
       <div className="grid grid-cols-7 gap-1">
         {calendarDays.map((dayInfo, index) => {
           const status = dayInfo.isCurrentMonth ? getDayStatus(dayInfo.date) : 'empty';
+          const isClickable = dayInfo.isCurrentMonth && status !== 'future';
 
           return (
-            <div
+            <button
               key={index}
+              onClick={() => isClickable && handleDateClick(dayInfo.date)}
+              disabled={!isClickable}
               className={`
-                aspect-square flex flex-col items-center justify-center rounded-lg text-sm transition-colors relative
-                ${!dayInfo.isCurrentMonth ? 'text-gray-300' : ''}
-                ${status === 'submitted' ? 'bg-green-100 text-green-700 font-semibold border-2 border-green-500' : ''}
-                ${status === 'missing' ? 'bg-red-50 text-red-600 border border-red-200' : ''}
-                ${status === 'future' ? 'text-gray-400 bg-gray-50' : ''}
+                aspect-square flex flex-col items-center justify-center rounded-lg text-sm transition-all relative
+                ${!dayInfo.isCurrentMonth ? 'text-gray-300 cursor-default' : ''}
+                ${status === 'submitted' ? 'bg-green-100 text-green-700 font-semibold border-2 border-green-500 hover:bg-green-200' : ''}
+                ${status === 'missing' ? 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 hover:border-red-300' : ''}
+                ${status === 'future' ? 'text-gray-400 bg-gray-50 cursor-not-allowed' : ''}
+                ${status === 'empty' && dayInfo.isCurrentMonth ? 'hover:bg-gray-50 cursor-pointer' : ''}
                 ${dayInfo.isToday && status !== 'submitted' ? 'ring-2 ring-primary-500 ring-offset-1' : ''}
+                ${isClickable ? 'cursor-pointer active:scale-95' : ''}
               `}
             >
               <span>{getDayNumber(dayInfo.date)}</span>
@@ -119,9 +154,9 @@ export default function DevotionCalendar() {
                 <span className="text-[10px] mt-0.5">✓</span>
               )}
               {status === 'missing' && (
-                <span className="text-[10px] mt-0.5">✕</span>
+                <span className="text-[10px] mt-0.5">+</span>
               )}
-            </div>
+            </button>
           );
         })}
       </div>
@@ -134,7 +169,7 @@ export default function DevotionCalendar() {
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-4 h-4 bg-red-50 border border-red-200 rounded" />
-          <span>Missing</span>
+          <span>Missing (click to add)</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-4 h-4 ring-2 ring-primary-500 rounded" />
@@ -142,47 +177,74 @@ export default function DevotionCalendar() {
         </div>
       </div>
 
-      {/* Upload Button */}
-      <button
-        onClick={() => setUploadModalOpen(true)}
-        className="btn-primary w-full mt-4"
-      >
-        <Upload className="w-4 h-4 mr-2" />
-        Upload Devotion
-      </button>
-
-      {/* Upload Modal */}
-      {uploadModalOpen && (
-        <DevotionUploadModal
-          onClose={() => setUploadModalOpen(false)}
+      {/* Entry Modal */}
+      {modalOpen && selectedDate && (
+        <DevotionEntryModal
+          date={selectedDate}
+          onClose={closeModal}
           onSubmit={submitDevotion}
+          onSubmitText={submitTextDevotion}
           loading={loading}
           error={error}
+          entryType={entryType}
+          onEntryTypeChange={setEntryType}
         />
       )}
     </div>
   );
 }
 
-function DevotionUploadModal({ onClose, onSubmit, loading, error }) {
+function DevotionEntryModal({ date, onClose, onSubmit, onSubmitText, loading, error, entryType, onEntryTypeChange }) {
+  const dateStr = format(date, 'MMMM d, yyyy');
+  const cameraInputRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  // Upload state
   const [selectedFile, setSelectedFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [notes, setNotes] = useState('');
+  
+  // Camera state
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraStream, setCameraStream] = useState(null);
+  const [capturedImage, setCapturedImage] = useState(null);
+  const videoRef = useRef(null);
+  
+  // Text editor state
+  const [richText, setRichText] = useState('');
+  
   const [submitError, setSubmitError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  function handleFileChange(e) {
+  const quillModules = {
+    toolbar: [
+      [{ 'header': [1, 2, 3, false] }],
+      ['bold', 'italic', 'underline', 'strike'],
+      [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+      [{ 'color': [] }, { 'background': [] }],
+      ['blockquote', 'code-block'],
+      ['clean']
+    ],
+  };
+
+  const quillFormats = [
+    'header',
+    'bold', 'italic', 'underline', 'strike',
+    'list', 'bullet',
+    'color', 'background',
+    'blockquote', 'code-block'
+  ];
+
+  function handleFileSelect(e) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate size
     if (file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
       setSubmitError(`Image must be less than ${MAX_IMAGE_SIZE_MB}MB`);
       return;
     }
 
-    // Validate type
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
       setSubmitError('Only JPEG, PNG, and WebP images are allowed');
       return;
@@ -191,53 +253,275 @@ function DevotionUploadModal({ onClose, onSubmit, loading, error }) {
     setSelectedFile(file);
     setPreview(URL.createObjectURL(file));
     setSubmitError('');
+    onEntryTypeChange('upload');
+  }
+
+  async function openCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment' },
+        audio: false 
+      });
+      
+      setCameraStream(stream);
+      setCameraOpen(true);
+      onEntryTypeChange('capture');
+      
+      // Set video source after a brief delay
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      }, 100);
+    } catch (err) {
+      setSubmitError('Unable to access camera. Please check permissions.');
+      console.error('Camera error:', err);
+    }
+  }
+
+  function capturePhoto() {
+    if (!videoRef.current) return;
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(videoRef.current, 0, 0);
+    
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const file = new File([blob], `devotion-${Date.now()}.jpg`, { type: 'image/jpeg' });
+        setCapturedImage(URL.createObjectURL(blob));
+        setSelectedFile(file);
+        setPreview(URL.createObjectURL(blob));
+        stopCamera();
+      }
+    }, 'image/jpeg');
+  }
+
+  function stopCamera() {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+    setCameraOpen(false);
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
 
-    if (!selectedFile) {
-      setSubmitError('Please select an image');
-      return;
-    }
+    if (entryType === 'write') {
+      if (!richText.trim()) {
+        setSubmitError('Please write your devotion entry');
+        return;
+      }
 
-    setUploading(true);
-    setSubmitError('');
+      setUploading(true);
+      setSubmitError('');
 
-    try {
-      await onSubmit(selectedFile, notes);
-      setSuccess(true);
-      setTimeout(onClose, 1500);
-    } catch (err) {
-      setSubmitError(err.message || 'Failed to upload devotion');
-    } finally {
-      setUploading(false);
+      try {
+        await onSubmitText(richText, format(date, 'yyyy-MM-dd'));
+        setSuccess(true);
+        setTimeout(onClose, 1500);
+      } catch (err) {
+        setSubmitError(err.message || 'Failed to submit devotion');
+      } finally {
+        setUploading(false);
+      }
+    } else {
+      if (!selectedFile) {
+        setSubmitError('Please select or capture an image');
+        return;
+      }
+
+      setUploading(true);
+      setSubmitError('');
+
+      try {
+        await onSubmit(selectedFile, notes, format(date, 'yyyy-MM-dd'));
+        setSuccess(true);
+        setTimeout(onClose, 1500);
+      } catch (err) {
+        setSubmitError(err.message || 'Failed to submit devotion');
+      } finally {
+        setUploading(false);
+      }
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Upload Devotion</h3>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg hover:bg-gray-100"
-          >
-            <X className="w-5 h-5 text-gray-500" />
-          </button>
-        </div>
+  // Cleanup camera on unmount
+  useState(() => {
+    return () => {
+      stopCamera();
+    };
+  });
 
-        {/* Success State */}
-        {success ? (
+  if (success) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50" onClick={onClose} />
+        <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
           <div className="text-center py-8">
-            <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
-            <p className="text-green-700 font-medium">Devotion submitted!</p>
-            <p className="text-sm text-gray-500 mt-1">Recorded with server timestamp</p>
+            <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Devotion Submitted!</h3>
+            <p className="text-gray-500">Your devotion for {dateStr} has been recorded</p>
           </div>
-        ) : (
+        </div>
+      </div>
+    );
+  }
+
+  // Camera capture view
+  if (cameraOpen && cameraStream) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/90" />
+        <div className="relative bg-gray-900 rounded-xl shadow-xl w-full max-w-2xl overflow-hidden">
+          {/* Camera Header */}
+          <div className="flex items-center justify-between p-4 bg-gray-800">
+            <h3 className="text-lg font-semibold text-white">Take a Photo</h3>
+            <button
+              onClick={() => {
+                stopCamera();
+                onEntryTypeChange(null);
+              }}
+              className="p-2 rounded-lg hover:bg-gray-700 text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Video Preview */}
+          <div className="relative aspect-video bg-black">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+            />
+          </div>
+
+          {/* Camera Controls */}
+          <div className="p-6 bg-gray-800 flex items-center justify-center gap-4">
+            <button
+              onClick={capturePhoto}
+              className="w-16 h-16 rounded-full bg-white border-4 border-gray-300 hover:border-white transition-colors flex items-center justify-center"
+            >
+              <div className="w-12 h-12 rounded-full bg-gray-900" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Entry type selection view
+  if (!entryType) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50" onClick={onClose} />
+        <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-xl font-bold text-gray-900">{dateStr}</h3>
+              <p className="text-sm text-gray-500 mt-1">How would you like to create your devotion entry?</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg hover:bg-gray-100"
+            >
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
+          </div>
+
+          {/* Entry Type Options */}
+          <div className="grid gap-4">
+            {/* Upload from device */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-4 p-4 border-2 border-gray-200 rounded-lg hover:border-primary-500 hover:bg-primary-50 transition-all text-left"
+            >
+              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Upload className="w-6 h-6 text-blue-600" />
+              </div>
+              <div>
+                <h4 className="font-semibold text-gray-900">Upload from Device</h4>
+                <p className="text-sm text-gray-500">Select an image from your computer</p>
+              </div>
+            </button>
+
+            {/* Capture from camera */}
+            <button
+              onClick={openCamera}
+              className="flex items-center gap-4 p-4 border-2 border-gray-200 rounded-lg hover:border-primary-500 hover:bg-primary-50 transition-all text-left"
+            >
+              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Camera className="w-6 h-6 text-green-600" />
+              </div>
+              <div>
+                <h4 className="font-semibold text-gray-900">Capture Photo</h4>
+                <p className="text-sm text-gray-500">Take a photo using your camera</p>
+              </div>
+            </button>
+
+            {/* Write digitally */}
+            <button
+              onClick={() => onEntryTypeChange('write')}
+              className="flex items-center gap-4 p-4 border-2 border-gray-200 rounded-lg hover:border-primary-500 hover:bg-primary-50 transition-all text-left"
+            >
+              <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Edit3 className="w-6 h-6 text-purple-600" />
+              </div>
+              <div>
+                <h4 className="font-semibold text-gray-900">Write Digitally</h4>
+                <p className="text-sm text-gray-500">Create a rich-text devotion entry</p>
+              </div>
+            </button>
+          </div>
+
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={handleFileSelect}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Upload/Capture form view
+  if (entryType === 'upload' || entryType === 'capture') {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50" onClick={onClose} />
+        <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">{dateStr}</h3>
+              <p className="text-sm text-gray-500">
+                {entryType === 'upload' ? 'Upload from Device' : 'Captured Photo'}
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setSelectedFile(null);
+                setPreview(null);
+                setCapturedImage(null);
+                onEntryTypeChange(null);
+              }}
+              className="p-2 rounded-lg hover:bg-gray-100"
+            >
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Error */}
             {submitError && (
@@ -247,58 +531,54 @@ function DevotionUploadModal({ onClose, onSubmit, loading, error }) {
               </div>
             )}
 
-            {/* Error from hook */}
-            {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-700">{error}</p>
+            {/* Image Preview */}
+            {preview && (
+              <div className="relative">
+                <img
+                  src={preview}
+                  alt="Preview"
+                  className="w-full rounded-lg object-contain max-h-64"
+                />
+                {!capturedImage && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedFile(null);
+                      setPreview(null);
+                      onEntryTypeChange(null);
+                    }}
+                    className="absolute top-2 right-2 p-1.5 bg-red-500 rounded-full text-white hover:bg-red-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             )}
 
-            {/* File Upload */}
-            <div>
-              <label className="label">Devotion Image *</label>
-              <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-primary-400 transition-colors">
-                {preview ? (
-                  <div className="relative">
-                    <img
-                      src={preview}
-                      alt="Preview"
-                      className="max-h-48 rounded-lg object-contain"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedFile(null);
-                        setPreview(null);
-                      }}
-                      className="absolute -top-2 -right-2 p-1 bg-red-500 rounded-full text-white hover:bg-red-600"
+            {/* Upload area (only if no preview) */}
+            {!preview && entryType === 'upload' && (
+              <div className="flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-primary-400 transition-colors">
+                <div className="text-center">
+                  <ImageIcon className="mx-auto h-12 w-12 text-gray-400" />
+                  <div className="mt-2">
+                    <label
+                      htmlFor="file-upload-modal"
+                      className="relative cursor-pointer rounded-md font-medium text-primary-600 hover:text-primary-500"
                     >
-                      <X className="w-4 h-4" />
-                    </button>
+                      <span>Upload a file</span>
+                      <input
+                        id="file-upload-modal"
+                        type="file"
+                        className="sr-only"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={handleFileSelect}
+                      />
+                    </label>
+                    <p className="text-xs text-gray-500 mt-1">PNG, JPG, WebP up to {MAX_IMAGE_SIZE_MB}MB</p>
                   </div>
-                ) : (
-                  <div className="text-center">
-                    <Upload className="mx-auto h-10 w-10 text-gray-400" />
-                    <div className="mt-2">
-                      <label
-                        htmlFor="file-upload"
-                        className="relative cursor-pointer rounded-md font-medium text-primary-600 hover:text-primary-500"
-                      >
-                        <span>Upload a file</span>
-                        <input
-                          id="file-upload"
-                          type="file"
-                          className="sr-only"
-                          accept="image/jpeg,image/png,image/webp"
-                          onChange={handleFileChange}
-                        />
-                      </label>
-                      <p className="text-xs text-gray-500 mt-1">PNG, JPG, WebP up to {MAX_IMAGE_SIZE_MB}MB</p>
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Notes */}
             <div>
@@ -307,20 +587,12 @@ function DevotionUploadModal({ onClose, onSubmit, loading, error }) {
                 id="notes"
                 rows={3}
                 className="input-field"
-                placeholder="Add any notes about today's devotion..."
+                placeholder="Add any notes about this devotion..."
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 maxLength={500}
               />
               <p className="text-xs text-gray-400 mt-1">{notes.length}/500</p>
-            </div>
-
-            {/* Server Time Notice */}
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-xs text-blue-700">
-                <strong>Note:</strong> The devotion date is automatically set to today&apos;s date 
-                using the server timestamp. This cannot be changed.
-              </p>
             </div>
 
             {/* Submit */}
@@ -331,16 +603,85 @@ function DevotionUploadModal({ onClose, onSubmit, loading, error }) {
             >
               {uploading ? (
                 <>
-                  <span className="spinner mr-2" />
-                  Uploading...
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Submitting...
                 </>
               ) : (
                 'Submit Devotion'
               )}
             </button>
           </form>
-        )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  // Rich text editor view
+  if (entryType === 'write') {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50" onClick={onClose} />
+        <div className="relative bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">{dateStr}</h3>
+              <p className="text-sm text-gray-500">Write Your Devotion</p>
+            </div>
+            <button
+              onClick={() => {
+                setRichText('');
+                onEntryTypeChange(null);
+              }}
+              className="p-2 rounded-lg hover:bg-gray-100"
+            >
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Error */}
+            {submitError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-red-700">{submitError}</p>
+              </div>
+            )}
+
+            {/* Rich Text Editor */}
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <ReactQuill
+                theme="snow"
+                value={richText}
+                onChange={setRichText}
+                modules={quillModules}
+                formats={quillFormats}
+                placeholder="Write your devotion entry here..."
+                className="bg-white"
+                style={{ minHeight: '250px' }}
+              />
+            </div>
+
+            {/* Submit */}
+            <button
+              type="submit"
+              className="btn-primary w-full"
+              disabled={uploading || !richText.trim()}
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Submitting...
+                </>
+              ) : (
+                'Submit Devotion'
+              )}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }

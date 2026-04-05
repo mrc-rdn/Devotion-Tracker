@@ -182,18 +182,18 @@ export function StatCard({ label, value, icon: Icon, trend, color = 'primary' })
   };
 
   return (
-    <div className="card">
-      <div className="flex items-center justify-center gap-4">
+    <div className="bg-white py-4 sm:py-4 border rounded-xl">
+      <div className="flex items-center justify-center ">
         {Icon && (
-          <div className={`p-3 rounded-lg ${colorClasses[color]}`}>
+          <div className={`p-3 mr-2 rounded-lg ${colorClasses[color]}`}>
             <Icon className="w-6 h-6" />
           </div>
         )}
-        <div>
-          <p className="text-xs text-gray-600">{label}</p>
-          <p className="text-md font-bold text-gray-900">{value}</p>
+        <div className="">
+          <p className="text-[10px] md:text-large text-gray-600">{label}</p>
+          <p className="text-md md:text-xl font-bold text-gray-900">{value}</p>
           {trend && (
-            <p className={`text-xs mt-1 ${trend > 0 ? 'text-green-600' : 'text-red-600'}`}>
+            <p className={`text-xs  mt-1 ${trend > 0 ? 'text-green-600' : 'text-red-600'}`}>
               {trend > 0 ? '↑' : '↓'} {Math.abs(trend)}% from last period
             </p>
           )}

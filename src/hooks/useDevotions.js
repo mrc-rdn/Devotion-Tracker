@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   getDevotionsForMonth,
   submitDevotion as submitDevotionService,
+  submitTextDevotion as submitTextDevotionService,
   getDevotionStats,
   getLeaderboard,
 } from '../services/devotions.service';
@@ -51,7 +52,6 @@ export function useDevotions(year, month) {
     if (!user) return;
 
     try {
-      // Get user's group memberships
       const { supabase } = await import('../lib/supabase');
       const { data: memberships } = await supabase
         .from('group_members')
@@ -68,29 +68,54 @@ export function useDevotions(year, month) {
     }
   }, [user]);
 
-  // Submit a devotion
-  async function submitDevotion(imageFile, notes = '') {
+  // Submit a devotion (image-based)
+  async function submitDevotion(imageFile, notes = '', dateStr = null) {
     if (!user) throw new Error('Not authenticated');
 
-    const data = await submitDevotionService(imageFile, notes);
+    const data = await submitDevotionService(imageFile, notes, dateStr);
 
-    // Optimistic update: immediately add the new devotion to state
-    const serverDate = format(new Date(), 'yyyy-MM-dd');
+    // Optimistic update
+    const serverDate = dateStr || format(new Date(), 'yyyy-MM-dd');
     setDevotions(prev => {
-      // Check if this date already exists (avoid duplicates)
       const exists = prev.some(d => d.devotion_date === serverDate);
       if (exists) return prev;
-      
-      return [...prev, { 
-        id: data.id, 
-        devotion_date: serverDate, 
+
+      return [...prev, {
+        id: data.id,
+        devotion_date: serverDate,
         image_url: data.image_url,
         notes: data.notes,
-        created_at: data.created_at 
+        created_at: data.created_at
       }];
     });
 
-    // Refresh data in background (don't await, don't block)
+    fetchDevotions().catch(err => console.error('Failed to refresh devotions:', err));
+    fetchStats().catch(err => console.error('Failed to refresh stats:', err));
+    fetchLeaderboard().catch(err => console.error('Failed to refresh leaderboard:', err));
+
+    return data;
+  }
+
+  // Submit a text-based devotion
+  async function submitTextDevotion(content, dateStr = null) {
+    if (!user) throw new Error('Not authenticated');
+
+    const data = await submitTextDevotionService(content, dateStr);
+
+    // Optimistic update
+    const serverDate = dateStr || format(new Date(), 'yyyy-MM-dd');
+    setDevotions(prev => {
+      const exists = prev.some(d => d.devotion_date === serverDate);
+      if (exists) return prev;
+
+      return [...prev, {
+        id: data.id,
+        devotion_date: serverDate,
+        content: data.content,
+        created_at: data.created_at
+      }];
+    });
+
     fetchDevotions().catch(err => console.error('Failed to refresh devotions:', err));
     fetchStats().catch(err => console.error('Failed to refresh stats:', err));
     fetchLeaderboard().catch(err => console.error('Failed to refresh leaderboard:', err));
@@ -122,6 +147,7 @@ export function useDevotions(year, month) {
     loading,
     error,
     submitDevotion,
+    submitTextDevotion,
     hasDevotionOn,
     getDevotionDates,
     refetch: fetchDevotions,
