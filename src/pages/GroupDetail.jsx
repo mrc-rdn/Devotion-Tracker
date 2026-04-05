@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Users,
   ArrowLeft,
@@ -7,19 +7,10 @@ import {
   Search,
   TrendingUp,
   CheckSquare,
-  X,
   Loader2,
   AlertCircle,
   ChevronLeft,
   ChevronRight,
-  LayoutDashboard,
-  FolderPlus,
-  MessageSquare,
-  LogOut,
-  Menu,
-  Calendar,
-  Crown,
-  BookOpen,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardHeader, Button, Badge, Modal } from '../components/ui';
@@ -35,10 +26,7 @@ export default function GroupDetail() {
   const { groupId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { profile, user, logout } = useAuth();
-
-  // Sidebar state
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { profile, user } = useAuth();
 
   // Group Data
   const [group, setGroup] = useState(null);
@@ -451,525 +439,380 @@ export default function GroupDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Mobile sidebar overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+    <div className="space-y-6">
+      {/* Back Button & Header */}
+      <div className="flex flex-row gap-2 ">
+        <div className="flex items-center gap-4 mr-auto">
+          <button
+            onClick={() => navigate('/leader/group')}
+            className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5 text-gray-600" />
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">{group?.name}</h1>
+            {group?.description && (
+              <p className="text-gray-500 mt-1">{group.description}</p>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={handleOpenAddMemberModal}>
+            <Users className="w-4 h-4 mr-2" />
+            Add Member
+          </Button>
+          {canManageLeaders && (
+            <Button variant="secondary" onClick={handleOpenAddLeaderModal}>
+              <UserPlus className="w-4 h-4 mr-2" />
+              Add Leader
+            </Button>
+          )}
+        </div>
+        <Button variant="secondary" onClick={fetchGroupData}>
+          Refresh
+        </Button>
+      </div>
 
-      {/* Sidebar */}
-      <aside
-        className={`fixed top-0 left-0 z-50 h-full w-64 bg-white border-r border-gray-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
-        <div className="flex flex-col h-full">
-          {/* Logo & Close */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-                <Calendar className="w-4 h-4 text-white" />
-              </div>
-              <span className="font-bold text-gray-900">Devotion Tracker</span>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card>
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-blue-100 rounded-lg">
+              <Users className="w-6 h-6 text-blue-600" />
             </div>
+            <div>
+              <p className="text-sm text-gray-500">Total Members</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.totalMembers}</p>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-green-100 rounded-lg">
+              <CheckSquare className="w-6 h-6 text-green-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">{viewMode === 'weekly' ? 'This Week Submissions' : 'This Month Submissions'}</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.totalSubmissions}</p>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-yellow-100 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-yellow-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Today Submission Rate</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.todaySubmissionPercent}%</p>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Calendar Tracker */}
+      <Card>
+        <CardHeader
+          title="Devotion Tracker"
+          subtitle={`${viewMode === 'weekly' ? 'Week of' : ''} ${selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`}
+        />
+
+        {/* View Controls */}
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          {/* View Mode Toggle */}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
             <button
-              onClick={() => setSidebarOpen(false)}
-              className="lg:hidden p-1 rounded-lg hover:bg-gray-100"
+              onClick={() => setViewMode('weekly')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                viewMode === 'weekly'
+                  ? 'bg-white shadow-sm text-gray-900'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
             >
-              <X className="w-5 h-5 text-gray-500" />
+              Weekly
+            </button>
+            <button
+              onClick={() => setViewMode('monthly')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                viewMode === 'monthly'
+                  ? 'bg-white shadow-sm text-gray-900'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Monthly
             </button>
           </div>
 
-          {/* User Info */}
-          <div className="px-6 py-4 border-b border-gray-100">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center text-primary-700 font-semibold">
-                {profile?.first_name?.[0]}
-                {profile?.last_name?.[0]}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900 truncate">
-                  {profile?.first_name} {profile?.last_name}
-                </p>
-                <span className={`inline-block mt-0.5 px-2 py-0.5 rounded-full text-xs font-medium ${
-                  profile?.role === 'admin' ? 'bg-purple-100 text-purple-700' :
-                  profile?.role === 'leader' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
-                }`}>
-                  {profile?.role?.charAt(0).toUpperCase() + profile?.role?.slice(1)}
-                </span>
-              </div>
-            </div>
-            {group?.name && (
-              <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
-                <Users className="w-3 h-3" />
-                {group.name}
-              </p>
-            )}
-          </div>
-
-          {/* Navigation */}
-          <nav className="flex-1 px-3 py-4 overflow-y-auto">
-            <Link
-              to="/leader/dashboard"
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1 transition-colors ${
-                location.pathname === '/leader/dashboard'
-                  ? 'bg-primary-50 text-primary-700'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              <LayoutDashboard className="w-5 h-5" />
-              Dashboard
-            </Link>
-            <Link
-              to="/leader/group"
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1 transition-colors ${
-                location.pathname.startsWith('/leader/group') && !location.pathname.includes(':')
-                  ? 'bg-primary-50 text-primary-700'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              <FolderPlus className="w-5 h-5" />
-              Manage Group
-            </Link>
-            <Link
-              to="/leader/messages"
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1 transition-colors ${
-                location.pathname === '/leader/messages'
-                  ? 'bg-primary-50 text-primary-700'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              <MessageSquare className="w-5 h-5" />
-              Messages
-            </Link>
-            <Link
-              to="/leader/bible"
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium mb-1 transition-colors ${
-                location.pathname === '/leader/bible'
-                  ? 'bg-primary-50 text-primary-700'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              <BookOpen className="w-5 h-5" />
-              Bible
-            </Link>
-          </nav>
-
-          {/* Logout */}
-          <div className="px-3 py-4 border-t border-gray-200">
+          {/* Period Navigation */}
+          <div className="flex items-center gap-2">
             <button
-              onClick={handleLogout}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-red-50 hover:text-red-600 transition-colors w-full"
+              onClick={() => navigatePeriod(-1)}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
             >
-              <LogOut className="w-5 h-5" />
-              Sign Out
+              <ChevronLeft className="w-4 h-4 text-gray-600" />
+            </button>
+            <span className="text-sm font-medium text-gray-700 min-w-[120px] text-center">
+              {viewMode === 'weekly'
+                ? `Week of ${calendarDays[0]?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                : selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            </span>
+            <button
+              onClick={() => navigatePeriod(1)}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              <ChevronRight className="w-4 h-4 text-gray-600" />
             </button>
           </div>
         </div>
-      </aside>
 
-      {/* Main Content */}
-      <div className="lg:ml-64">
-        {/* Top Bar */}
-        <header className="sticky top-0 z-30 bg-white border-b border-gray-200 px-4 lg:px-6 py-3">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-2 rounded-lg hover:bg-gray-100"
-            >
-              <Menu className="w-5 h-5 text-gray-600" />
-            </button>
-            <div className="lg:hidden">
-              <span className="font-semibold text-gray-900">Devotion Tracker</span>
-            </div>
-            <div className="hidden lg:block">
-              <h2 className="text-sm font-medium text-gray-500">
-                {group?.name || 'Group Details'}
-              </h2>
-            </div>
+        {/* Legend */}
+        <div className="flex items-center gap-4 mb-4 text-xs text-gray-500">
+          <div className="flex items-center gap-1.5">
+            <div className="w-4 h-4 bg-green-100 border-2 bg-green-500 rounded" />
+            <span>Submitted</span>
           </div>
-        </header>
-
-        {/* Page Content */}
-        <main className="p-4 lg:p-6 space-y-6">
-          {/* Back Button & Header */}
-          <div className="flex flex-row gap-2 ">
-            <div className="flex items-center gap-4 mr-auto">
-              <button
-                onClick={() => navigate('/leader/group')}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <ArrowLeft className="w-5 h-5 text-gray-600" />
-              </button>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">{group?.name}</h1>
-                {group?.description && (
-                  <p className="text-gray-500 mt-1">{group.description}</p>
-                )}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={handleOpenAddMemberModal}>
-                <Users className="w-4 h-4 mr-2" />
-                Add Member
-              </Button>
-              {canManageLeaders && (
-                <Button variant="secondary" onClick={handleOpenAddLeaderModal}>
-                  <UserPlus className="w-4 h-4 mr-2" />
-                  Add Leader
-                </Button>
-              )}
-            </div>
-            <Button variant="secondary" onClick={fetchGroupData}>
-              Refresh
-            </Button>
+          <div className="flex items-center gap-1.5">
+            <div className="w-4 h-4 bg-white border border-gray-300 bg-red-600 rounded" />
+            <span>Not submitted</span>
           </div>
-
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Card>
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-blue-100 rounded-lg">
-                  <Users className="w-6 h-6 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Total Members</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.totalMembers}</p>
-                </div>
-              </div>
-            </Card>
-
-            <Card>
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-green-100 rounded-lg">
-                  <CheckSquare className="w-6 h-6 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">{viewMode === 'weekly' ? 'This Week Submissions' : 'This Month Submissions'}</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.totalSubmissions}</p>
-                </div>
-              </div>
-            </Card>
-
-            <Card>
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-yellow-100 rounded-lg">
-                  <TrendingUp className="w-6 h-6 text-yellow-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Today Submission Rate</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.todaySubmissionPercent}%</p>
-                </div>
-              </div>
-            </Card>
+          <div className="flex items-center gap-1.5">
+            <div className="w-4 h-4 bg-gray-200 rounded" />
+            <span>Future date</span>
           </div>
+        </div>
 
-          {/* Calendar Tracker */}
-          <Card>
-            <CardHeader
-              title="Devotion Tracker"
-              subtitle={`${viewMode === 'weekly' ? 'Week of' : ''} ${selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`}
-            />
-
-            {/* View Controls */}
-            <div className="flex flex-wrap items-center gap-3 mb-4">
-              {/* View Mode Toggle */}
-              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-                <button
-                  onClick={() => setViewMode('weekly')}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                    viewMode === 'weekly'
-                      ? 'bg-white shadow-sm text-gray-900'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Weekly
-                </button>
-                <button
-                  onClick={() => setViewMode('monthly')}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                    viewMode === 'monthly'
-                      ? 'bg-white shadow-sm text-gray-900'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Monthly
-                </button>
-              </div>
-
-              {/* Period Navigation */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => navigatePeriod(-1)}
-                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-                >
-                  <ChevronLeft className="w-4 h-4 text-gray-600" />
-                </button>
-                <span className="text-sm font-medium text-gray-700 min-w-[120px] text-center">
-                  {viewMode === 'weekly'
-                    ? `Week of ${calendarDays[0]?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-                    : selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                </span>
-                <button
-                  onClick={() => navigatePeriod(1)}
-                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-                >
-                  <ChevronRight className="w-4 h-4 text-gray-600" />
-                </button>
-              </div>
-            </div>
-
-            {/* Legend */}
-            <div className="flex items-center gap-4 mb-4 text-xs text-gray-500">
-              <div className="flex items-center gap-1.5">
-                <div className="w-4 h-4 bg-green-100 border-2 bg-green-500 rounded" />
-                <span>Submitted</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-4 h-4 bg-white border border-gray-300 bg-red-600 rounded" />
-                <span>Not submitted</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-4 h-4 bg-gray-200 rounded" />
-                <span>Future date</span>
-              </div>
-            </div>
-
-            {/* Calendar Grid */}
-            <div className="overflow-x-auto scrollbar-thin">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr>
-                    <th className="sticky left-0 z-10 bg-white border-b border-gray-200 p-3 text-left text-xs font-semibold text-gray-500 uppercase min-w-[150px]">
-                      Member
+        {/* Calendar Grid */}
+        <div className="overflow-x-auto scrollbar-thin">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr>
+                <th className="sticky left-0 z-10 bg-white border-b border-gray-200 p-3 text-left text-xs font-semibold text-gray-500 uppercase min-w-[150px]">
+                  Member
+                </th>
+                {calendarDays.map((day, i) => {
+                  const isToday =
+                    day.toDateString() === new Date().toDateString();
+                  return (
+                    <th
+                      key={i}
+                      className={`border-b border-gray-200 p-2 text-center text-xs font-medium min-w-[36px] ${
+                        isToday ? 'text-primary-600 bg-primary-50' : 'text-gray-500'
+                      }`}
+                    >
+                      <div>{day.toLocaleDateString('en-US', { weekday: 'short' }).charAt(0)}</div>
+                      <div className={`mt-0.5 ${isToday ? 'bg-primary-600 text-white rounded-full w-6 h-6 flex items-center justify-center' : ''}`}>
+                        {day.getDate()}
+                      </div>
                     </th>
-                    {calendarDays.map((day, i) => {
-                      const isToday =
-                        day.toDateString() === new Date().toDateString();
-                      return (
-                        <th
-                          key={i}
-                          className={`border-b border-gray-200 p-2 text-center text-xs font-medium min-w-[36px] ${
-                            isToday ? 'text-primary-600 bg-primary-50' : 'text-gray-500'
-                          }`}
-                        >
-                          <div>{day.toLocaleDateString('en-US', { weekday: 'short' }).charAt(0)}</div>
-                          <div className={`mt-0.5 ${isToday ? 'bg-primary-600 text-white rounded-full w-6 h-6 flex items-center justify-center' : ''}`}>
-                            {day.getDate()}
-                          </div>
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredMembers.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={calendarDays.length + 1}
-                        className="text-center py-8 text-gray-500"
-                      >
-                        No members found
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredMembers.map((member, rowIndex) => {
-                      const memberDevotions = devotionData[member.id] || {};
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredMembers.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={calendarDays.length + 1}
+                    className="text-center py-8 text-gray-500"
+                  >
+                    No members found
+                  </td>
+                </tr>
+              ) : (
+                filteredMembers.map((member, rowIndex) => {
+                  const memberDevotions = devotionData[member.id] || {};
 
-                      return (
-                        <tr
-                          key={member.id}
-                          className={rowIndex % 2 === 0 ? 'bg-gray-50/50' : 'bg-white'}
-                        >
-                          <td className="sticky left-0 z-10 border-b border-gray-200 p-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-xs font-semibold text-gray-700 flex-shrink-0">
-                                {(member.first_name || '?')[0]}{(member.last_name || '?')[0]}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate">
-                                  {member.first_name} {member.last_name}
-                                </p>
-                                <p className="text-xs text-gray-500 truncate">{member.email}</p>
-                              </div>
-                            </div>
-                          </td>
-                          {calendarDays.map((day, dayIndex) => {
-                            // Use local date string to match database (Philippines time)
-                            const year = day.getFullYear();
-                            const month = String(day.getMonth() + 1).padStart(2, '0');
-                            const date = String(day.getDate()).padStart(2, '0');
-                            const dateStr = `${year}-${month}-${date}`;
-                            const isSubmitted = memberDevotions[dateStr];
-                            const isFuture = day > new Date();
-                            const isToday = day.toDateString() === new Date().toDateString();
-
-                            return (
-                              <td
-                                key={dayIndex}
-                                className={`border-b border-gray-100 p-1 text-center ${
-                                  isToday ? 'bg-primary-50/30' : ''
-                                }`}
-                              >
-                                {isFuture ? (
-                                  <div className="w-5 h-5 mx-auto bg-gray-200 rounded" />
-                                ) : isSubmitted ? (
-                                  <div className="w-5 h-5 mx-auto bg-green-100 border-2 border-green-500 rounded flex items-center justify-center">
-                                    <CheckSquare className="w-3 h-3 text-green-700" />
-                                  </div>
-                                ) : (
-                                  <div className="w-5 h-5 mx-auto bg-white border border-gray-300 rounded" />
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-
-          {/* Add Co-Leader Modal */}
-          <Modal
-            isOpen={showAddLeaderModal}
-            onClose={() => setShowAddLeaderModal(false)}
-            title="Add Leader"
-          >
-            <div className="space-y-4">
-              {/* Search Input */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search by name or email..."
-                  className="input-field pl-9"
-                  value={leaderSearch}
-                  onChange={(e) => setLeaderSearch(e.target.value)}
-                  autoFocus
-                />
-              </div>
-
-              {/* Modal Error */}
-              {modalError && (
-                <div className="p-2 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-xs text-red-700">{modalError}</p>
-                </div>
-              )}
-
-              {/* Available Leaders List */}
-              <div className="max-h-64 overflow-y-auto scrollbar-thin space-y-2">
-                {filteredLeaders.length === 0 ? (
-                  <p className="text-sm text-gray-500 text-center py-4">
-                    {leaderSearch ? 'No leaders found' : 'No leaders available'}
-                  </p>
-                ) : (
-                  filteredLeaders.map((leader) => (
-                    <div
-                      key={leader.id}
-                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-xs font-semibold text-blue-700">
-                          {(leader.first_name || '?')[0]}{(leader.last_name || '?')[0]}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {leader.first_name} {leader.last_name}
-                          </p>
-                          <p className="text-xs text-gray-500">{leader.email}</p>
-                        </div>
-                      </div>
-                      {leader.alreadyAssigned ? (
-                        <Badge color="gray">Already assigned</Badge>
-                      ) : (
-                        <Button
-                          variant="primary"
-                          className="text-xs py-1.5 px-3"
-                          loading={addingLeader}
-                          onClick={() => handleAddLeader(leader.id)}
-                        >
-                          Add
-                        </Button>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </Modal>
-
-          {/* Add Member Modal */}
-          <Modal
-            isOpen={showAddMemberModal}
-            onClose={() => setShowAddMemberModal(false)}
-            title="Add Member"
-          >
-            <div className="space-y-4">
-              {/* Search Input */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search by name or email..."
-                  className="input-field pl-9"
-                  value={memberSearchInput}
-                  onChange={(e) => setMemberSearchInput(e.target.value)}
-                  autoFocus
-                />
-              </div>
-
-              {/* Modal Error */}
-              {memberModalError && (
-                <div className="p-2 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-xs text-red-700">{memberModalError}</p>
-                </div>
-              )}
-
-              {/* Available Members List */}
-              <div className="max-h-64 overflow-y-auto scrollbar-thin space-y-2">
-                {filteredAvailableMembers.length === 0 ? (
-                  <p className="text-sm text-gray-500 text-center py-4">
-                    {memberSearchInput ? 'No users found' : 'No users available'}
-                  </p>
-                ) : (
-                  filteredAvailableMembers.map((member) => (
-                    <div
+                  return (
+                    <tr
                       key={member.id}
-                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                      className={rowIndex % 2 === 0 ? 'bg-gray-50/50' : 'bg-white'}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-xs font-semibold text-green-700">
-                          {(member.first_name || '?')[0]}{(member.last_name || '?')[0]}
+                      <td className="sticky left-0 z-10 border-b border-gray-200 p-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-xs font-semibold text-gray-700 flex-shrink-0">
+                            {(member.first_name || '?')[0]}{(member.last_name || '?')[0]}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {member.first_name} {member.last_name}
+                            </p>
+                            <p className="text-xs text-gray-500 truncate">{member.email}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {member.first_name} {member.last_name}
-                          </p>
-                          <p className="text-xs text-gray-500">{member.email}</p>
-                        </div>
-                      </div>
-                      <Button
-                        variant="primary"
-                        className="text-xs py-1.5 px-3"
-                        loading={addingMember}
-                        onClick={() => handleAddMember(member.id)}
-                      >
-                        Add
-                      </Button>
-                    </div>
-                  ))
-                )}
-              </div>
+                      </td>
+                      {calendarDays.map((day, dayIndex) => {
+                        // Use local date string to match database (Philippines time)
+                        const year = day.getFullYear();
+                        const month = String(day.getMonth() + 1).padStart(2, '0');
+                        const date = String(day.getDate()).padStart(2, '0');
+                        const dateStr = `${year}-${month}-${date}`;
+                        const isSubmitted = memberDevotions[dateStr];
+                        const isFuture = day > new Date();
+                        const isToday = day.toDateString() === new Date().toDateString();
+
+                        return (
+                          <td
+                            key={dayIndex}
+                            className={`border-b border-gray-100 p-1 text-center ${
+                              isToday ? 'bg-primary-50/30' : ''
+                            }`}
+                          >
+                            {isFuture ? (
+                              <div className="w-5 h-5 mx-auto bg-gray-200 rounded" />
+                            ) : isSubmitted ? (
+                              <div className="w-5 h-5 mx-auto bg-green-100 border-2 border-green-500 rounded flex items-center justify-center">
+                                <CheckSquare className="w-3 h-3 text-green-700" />
+                              </div>
+                            ) : (
+                              <div className="w-5 h-5 mx-auto bg-white border border-gray-300 rounded" />
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* Add Co-Leader Modal */}
+      <Modal
+        isOpen={showAddLeaderModal}
+        onClose={() => setShowAddLeaderModal(false)}
+        title="Add Leader"
+      >
+        <div className="space-y-4">
+          {/* Search Input */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search by name or email..."
+              className="input-field pl-9"
+              value={leaderSearch}
+              onChange={(e) => setLeaderSearch(e.target.value)}
+              autoFocus
+            />
+          </div>
+
+          {/* Modal Error */}
+          {modalError && (
+            <div className="p-2 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-xs text-red-700">{modalError}</p>
             </div>
-          </Modal>
-        </main>
-      </div>
+          )}
+
+          {/* Available Leaders List */}
+          <div className="max-h-64 overflow-y-auto scrollbar-thin space-y-2">
+            {filteredLeaders.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">
+                {leaderSearch ? 'No leaders found' : 'No leaders available'}
+              </p>
+            ) : (
+              filteredLeaders.map((leader) => (
+                <div
+                  key={leader.id}
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-xs font-semibold text-blue-700">
+                      {(leader.first_name || '?')[0]}{(leader.last_name || '?')[0]}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">
+                        {leader.first_name} {leader.last_name}
+                      </p>
+                      <p className="text-xs text-gray-500">{leader.email}</p>
+                    </div>
+                  </div>
+                  {leader.alreadyAssigned ? (
+                    <Badge color="gray">Already assigned</Badge>
+                  ) : (
+                    <Button
+                      variant="primary"
+                      className="text-xs py-1.5 px-3"
+                      loading={addingLeader}
+                      onClick={() => handleAddLeader(leader.id)}
+                    >
+                      Add
+                    </Button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Add Member Modal */}
+      <Modal
+        isOpen={showAddMemberModal}
+        onClose={() => setShowAddMemberModal(false)}
+        title="Add Member"
+      >
+        <div className="space-y-4">
+          {/* Search Input */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search by name or email..."
+              className="input-field pl-9"
+              value={memberSearchInput}
+              onChange={(e) => setMemberSearchInput(e.target.value)}
+              autoFocus
+            />
+          </div>
+
+          {/* Modal Error */}
+          {memberModalError && (
+            <div className="p-2 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-xs text-red-700">{memberModalError}</p>
+            </div>
+          )}
+
+          {/* Available Members List */}
+          <div className="max-h-64 overflow-y-auto scrollbar-thin space-y-2">
+            {filteredAvailableMembers.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">
+                {memberSearchInput ? 'No users found' : 'No users available'}
+              </p>
+            ) : (
+              filteredAvailableMembers.map((member) => (
+                <div
+                  key={member.id}
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-xs font-semibold text-green-700">
+                      {(member.first_name || '?')[0]}{(member.last_name || '?')[0]}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">
+                        {member.first_name} {member.last_name}
+                      </p>
+                      <p className="text-xs text-gray-500">{member.email}</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="primary"
+                    className="text-xs py-1.5 px-3"
+                    loading={addingMember}
+                    onClick={() => handleAddMember(member.id)}
+                  >
+                    Add
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

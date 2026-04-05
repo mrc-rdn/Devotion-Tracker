@@ -87,8 +87,8 @@ export default function LeaderDashboard() {
       </div>
 
       {/* Leaderboard Section */}
-      <div className='w-full flex gap-10'>
-        <div className="bg-white border w-8/12 border-slate-100 shadow-sm rounded-sm">
+      <div className='w-full flex flex-col sm:flex-rows gap-10'>
+        <div className="bg-white border w-full md:w-4/12 border-slate-100 shadow-sm rounded-sm">
           <div className="px-6 py-4 border-b border-slate-100">
             <h3 className="text-xs uppercase tracking-[0.2em] font-black text-[#1a365d]">Group Fellowship Rankings</h3>
           </div>
@@ -97,7 +97,7 @@ export default function LeaderDashboard() {
           </div>
         </div>
       {/* Sidebar Space for Scripture - Mimicking Slide 5 */}
-        <div className="bg-[#f8fafc] w-4/12 p-8 border border-slate-200 rounded-sm">
+        <div className="bg-[#f8fafc] w-full md:w-4/12 p-8 border border-slate-200 rounded-sm">
            <h4 className="text-[10px] uppercase tracking-[0.2em] font-black text-slate-400 mb-6">Scripture Focus</h4>
            <blockquote className="space-y-4">
              <p className="text-slate-700 font-serif italic text-lg leading-relaxed">

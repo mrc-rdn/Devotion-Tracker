@@ -190,20 +190,8 @@ export default function App() {
         <Route path="group" element={<ManageGroup />} />
         <Route path="messages" element={<Messages />} />
         <Route path="bible" element={<Bible />} />
+        <Route path="group/:groupId" element={<GroupDetail />} />
       </Route>
-
-      {/*
-         IMPORTANT: This route is OUTSIDE the DashboardLayout block.
-         It renders GroupDetail as a standalone page with its own sidebar.
-      */}
-      <Route
-        path="leader/group/:groupId"
-        element={
-          <RequireAuth allowedRoles={['leader', 'admin']}>
-            <GroupDetail />
-          </RequireAuth>
-        }
-      />
 
       {/* Protected Admin Routes */}
       <Route
