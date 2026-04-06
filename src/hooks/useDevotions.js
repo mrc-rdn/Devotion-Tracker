@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import {
   getDevotionsForMonth,
+  getDevotionByDate as getDevotionByDateService,
   submitDevotion as submitDevotionService,
   submitTextDevotion as submitTextDevotionService,
+  deleteDevotion as deleteDevotionService,
   getDevotionStats,
   getLeaderboard,
 } from '../services/devotions.service';
@@ -123,10 +125,36 @@ export function useDevotions(year, month) {
     return data;
   }
 
+  // Delete a devotion
+  async function deleteDevotion(devotionId, imageUrl) {
+    if (!user) throw new Error('Not authenticated');
+
+    await deleteDevotionService(devotionId, imageUrl);
+
+    // Remove from local state
+    setDevotions(prev => prev.filter(d => d.id !== devotionId));
+
+    fetchDevotions().catch(err => console.error('Failed to refresh devotions:', err));
+    fetchStats().catch(err => console.error('Failed to refresh stats:', err));
+    fetchLeaderboard().catch(err => console.error('Failed to refresh leaderboard:', err));
+  }
+
+  // Get devotion for a specific date
+  async function getDevotionByDate(dateStr) {
+    if (!user) return null;
+    return getDevotionByDateService(user.id, dateStr);
+  }
+
   // Check if a specific date has a devotion
   function hasDevotionOn(date) {
     const devotionDate = format(date, 'yyyy-MM-dd');
     return devotions.some((d) => d.devotion_date === devotionDate);
+  }
+
+  // Get devotion object for a specific date
+  function getDevotionForDate(date) {
+    const devotionDate = format(date, 'yyyy-MM-dd');
+    return devotions.find((d) => d.devotion_date === devotionDate) || null;
   }
 
   // Get all devotion dates as a Set for fast lookup
@@ -148,7 +176,10 @@ export function useDevotions(year, month) {
     error,
     submitDevotion,
     submitTextDevotion,
+    deleteDevotion,
+    getDevotionByDate,
     hasDevotionOn,
+    getDevotionForDate,
     getDevotionDates,
     refetch: fetchDevotions,
   };

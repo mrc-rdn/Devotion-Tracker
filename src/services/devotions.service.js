@@ -123,7 +123,7 @@ async function uploadDevotionImage(userId, file) {
 export async function getDevotionsByRange(userId, startDate, endDate) {
   const { data, error } = await supabase
     .from('devotions')
-    .select('id, devotion_date, image_url, notes, created_at')
+    .select('id, devotion_date, image_url, notes, content, created_at')
     .eq('user_id', userId)
     .gte('devotion_date', formatDateISO(startDate))
     .lte('devotion_date', formatDateISO(endDate))
@@ -144,6 +144,61 @@ export async function getDevotionsForMonth(userId, year, month) {
   const startDate = new Date(year, month, 1);
   const endDate = new Date(year, month + 1, 0);
   return getDevotionsByRange(userId, startDate, endDate);
+}
+
+/**
+ * Get a single devotion by date
+ */
+export async function getDevotionByDate(userId, dateStr) {
+  const { data, error } = await supabase
+    .from('devotions')
+    .select('id, devotion_date, image_url, notes, content, created_at')
+    .eq('user_id', userId)
+    .eq('devotion_date', dateStr)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') return null; // No rows found
+    throw new Error(error.message || 'Failed to fetch devotion');
+  }
+
+  return data;
+}
+
+/**
+ * Delete a devotion (including image from storage)
+ */
+export async function deleteDevotion(devotionId, imageUrl) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  // Delete image from storage if it exists
+  if (imageUrl) {
+    try {
+      const urlParts = imageUrl.split('/');
+      const fileName = urlParts[urlParts.length - 1];
+      const userId = urlParts[urlParts.length - 2];
+      const path = `${userId}/${fileName}`;
+
+      await supabase.storage
+        .from(DEVOTION_BUCKET)
+        .remove([path]);
+    } catch (err) {
+      console.warn('Failed to delete image from storage:', err.message);
+      // Continue even if storage delete fails
+    }
+  }
+
+  // Delete the devotion record
+  const { error } = await supabase
+    .from('devotions')
+    .delete()
+    .eq('id', devotionId)
+    .eq('user_id', user.id);
+
+  if (error) {
+    throw new Error(error.message || 'Failed to delete devotion');
+  }
 }
 
 /**

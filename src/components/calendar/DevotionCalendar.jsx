@@ -9,7 +9,10 @@ import {
   Camera,
   Edit3,
   Image as ImageIcon,
-  Loader2
+  Loader2,
+  Trash2,
+  RefreshCw,
+  Calendar,
 } from 'lucide-react';
 import {
   getCalendarDays,
@@ -31,11 +34,14 @@ export default function DevotionCalendar() {
   const [selectedDate, setSelectedDate] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [entryType, setEntryType] = useState(null); // 'upload', 'capture', or 'write'
+  const [previewDevotion, setPreviewDevotion] = useState(null); // Devotion object for preview
 
   const {
     getDevotionDates,
+    getDevotionForDate,
     submitDevotion,
     submitTextDevotion,
+    deleteDevotion,
     loading,
     error,
   } = useDevotions(year, month);
@@ -76,14 +82,46 @@ export default function DevotionCalendar() {
     const isFuture = date > new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
     if (isFuture) return; // Don't allow future dates
 
+    const devotion = getDevotionForDate(date);
     setSelectedDate(date);
-    setEntryType(null);
+
+    if (devotion) {
+      // Show preview for already submitted dates
+      setPreviewDevotion(devotion);
+      setEntryType(null);
+    } else {
+      // Show entry options for unsubmitted dates
+      setPreviewDevotion(null);
+      setEntryType(null);
+    }
     setModalOpen(true);
   }
 
   function closeModal() {
     setModalOpen(false);
     setSelectedDate(null);
+    setPreviewDevotion(null);
+    setEntryType(null);
+  }
+
+  function handleDeleteDevotion() {
+    if (!previewDevotion) return;
+    if (!confirm('Are you sure you want to delete this devotion?')) return;
+
+    deleteDevotion(previewDevotion.id, previewDevotion.image_url)
+      .then(() => {
+        setPreviewDevotion(null);
+        setModalOpen(false);
+      })
+      .catch(err => {
+        console.error('Failed to delete devotion:', err);
+        alert('Failed to delete devotion: ' + err.message);
+      });
+  }
+
+  function handleUploadAgain() {
+    // Close preview, open upload form
+    setPreviewDevotion(null);
     setEntryType(null);
   }
 
@@ -166,7 +204,7 @@ export default function DevotionCalendar() {
       <div className="flex items-center gap-4 mt-4 text-xs text-gray-500">
         <div className="flex items-center gap-1.5">
           <div className="w-4 h-4 bg-green-100 border-2 border-green-500 rounded" />
-          <span>Devotion submitted</span>
+          <span>Devotion submitted (click to preview)</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-4 h-4 bg-red-50 border border-red-200 rounded" />
@@ -185,17 +223,20 @@ export default function DevotionCalendar() {
           onClose={closeModal}
           onSubmit={submitDevotion}
           onSubmitText={submitTextDevotion}
+          onDelete={handleDeleteDevotion}
+          onUploadAgain={handleUploadAgain}
           loading={loading}
           error={error}
           entryType={entryType}
           onEntryTypeChange={setEntryType}
+          previewDevotion={previewDevotion}
         />
       )}
     </div>
   );
 }
 
-function DevotionEntryModal({ date, onClose, onSubmit, onSubmitText, loading, error, entryType, onEntryTypeChange }) {
+function DevotionEntryModal({ date, onClose, onSubmit, onSubmitText, onDelete, onUploadAgain, loading, error, entryType, onEntryTypeChange, previewDevotion }) {
   const dateStr = format(date, 'MMMM d, yyyy');
   const fileInputRef = useRef(null);
 
@@ -321,6 +362,83 @@ function DevotionEntryModal({ date, onClose, onSubmit, onSubmitText, loading, er
             <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
             <h3 className="text-xl font-bold text-gray-900 mb-2">Devotion Submitted!</h3>
             <p className="text-gray-500">Your devotion for {dateStr} has been recorded</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // PREVIEW MODE - Show existing devotion
+  // ==========================================
+  if (previewDevotion) {
+    const isImageDevotion = previewDevotion.image_url;
+    const isTextDevotion = previewDevotion.content;
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50" onClick={onClose} />
+        <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                <Calendar className="w-5 h-5 text-green-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">{dateStr}</h3>
+                <p className="text-sm text-gray-500">Devotion Preview</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100">
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
+          </div>
+
+          {/* Content */}
+          {isImageDevotion ? (
+            <div className="space-y-4">
+              <img
+                src={previewDevotion.image_url}
+                alt="Devotion"
+                className="w-full rounded-lg object-contain max-h-64"
+              />
+              {previewDevotion.notes && (
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <p className="text-sm font-medium text-gray-700 mb-1">Notes:</p>
+                  <p className="text-sm text-gray-600">{previewDevotion.notes}</p>
+                </div>
+              )}
+            </div>
+          ) : isTextDevotion ? (
+            <div className="border border-gray-200 rounded-lg p-4 max-h-64 overflow-y-auto">
+              <div dangerouslySetInnerHTML={{ __html: previewDevotion.content }} className="prose prose-sm max-w-none" />
+            </div>
+          ) : null}
+
+          {/* Submitted info */}
+          <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+            <p className="text-xs text-green-700">
+              <strong>Submitted:</strong> {new Date(previewDevotion.created_at).toLocaleString()}
+            </p>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex gap-3 mt-6">
+            <button
+              onClick={onDelete}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors font-medium text-sm"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete
+            </button>
+            <button
+              onClick={onUploadAgain}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium text-sm"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Upload Again
+            </button>
           </div>
         </div>
       </div>
