@@ -158,9 +158,10 @@ function getNavItems(role) {
   ];
 
   if (role === 'member') {
-    baseItems.push({ href: '/member/group', icon: UserPlus, label: 'My Group' });
+    baseItems.push({ href: '/member/group', icon: UserPlus, label: 'Join Group' });
+    baseItems.push({ href: '/leader/group', icon: FolderPlus, label: 'Manage My Groups' });
   } else if (role === 'leader') {
-    baseItems.push({ href: '/leader/group', icon: FolderPlus, label: 'Manage Group' });
+    baseItems.push({ href: '/leader/group', icon: FolderPlus, label: 'My Group' });
   }
 
   baseItems.push({ href: `/${role}/messages`, icon: MessageSquare, label: 'Messages' });

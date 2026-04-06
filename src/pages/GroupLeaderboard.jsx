@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Trophy, TrendingUp, ChevronUp, ChevronDown, RefreshCw, Crown } from 'lucide-react';
+import { Trophy, ChevronUp, ChevronDown, RefreshCw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { Card, CardHeader, Badge, Skeleton } from '../components/ui';
+import { Card, CardHeader, Skeleton } from '../components/ui';
 import {
   getGroupLeaderboard,
   subscribeToGroupDevotions,
@@ -146,7 +146,9 @@ export default function GroupLeaderboard({ userGroups = [], selectedGroupId, onS
   }
 
   function getRoleBadge(role) {
-    return role === 'leader' ? 'blue' : 'green';
+    // 'owner' = Leader (group creator)
+    // 'leader' = Co-Leader (promoted member)
+    return role === 'owner' ? 'purple' : role === 'leader' ? 'blue' : 'green';
   }
 
   if (!groupId) {
@@ -262,13 +264,7 @@ export default function GroupLeaderboard({ userGroups = [], selectedGroupId, onS
                         <span className="ml-1 text-xs text-primary-600">(You)</span>
                       )}
                     </p>
-                    {member.role === 'leader' && (
-                      <Crown className="w-3.5 h-3.5 text-blue-500" />
-                    )}
                   </div>
-                  <Badge color={getRoleBadge(member.role)}>
-                    {member.role}
-                  </Badge>
                 </div>
 
                 <div className="text-right">

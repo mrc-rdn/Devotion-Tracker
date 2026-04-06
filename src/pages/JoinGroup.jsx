@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, Users, CheckCircle, AlertCircle, LogOut, Loader2, Crown, ChevronRight, X, ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, Users, CheckCircle, AlertCircle, LogOut, Loader2, Crown, ChevronRight, X, ArrowRight, Eye } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardHeader, Button, Badge } from '../components/ui';
 import { useDebounce } from '../hooks/useDebounce';
@@ -13,7 +14,8 @@ import {
 
 export default function JoinGroup() {
   const { user } = useAuth();
-  
+  const navigate = useNavigate();
+
   // My Groups State
   const [myGroups, setMyGroups] = useState([]);
   const [loadingMyGroups, setLoadingMyGroups] = useState(true);
@@ -22,7 +24,7 @@ export default function JoinGroup() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
-  
+
   // Action State
   const [joining, setJoining] = useState(null); // Stores groupId being joined
   const [leaving, setLeaving] = useState(null); // Stores groupId being left
@@ -69,7 +71,7 @@ export default function JoinGroup() {
 
       try {
         const results = await searchGroups(debouncedQuery);
-        
+
         // Filter out groups the user is already in
         const myGroupIds = new Set(myGroups.map(g => g.id));
         const filteredResults = results.filter(g => !myGroupIds.has(g.id));
@@ -171,7 +173,7 @@ export default function JoinGroup() {
       setSuccess('Successfully joined the group!');
       setSearchQuery('');
       setSearchResults([]);
-      
+
       // Refresh my groups list
       if (user?.id) {
         const groups = await getUserGroups(user.id);
@@ -195,7 +197,7 @@ export default function JoinGroup() {
     try {
       await leaveGroup(groupId);
       setSuccess('You have left the group.');
-      
+
       // Refresh my groups list
       if (user?.id) {
         const groups = await getUserGroups(user.id);
@@ -240,7 +242,7 @@ export default function JoinGroup() {
           title="Groups You've Joined"
           subtitle={`${myGroups.length} group${myGroups.length !== 1 ? 's' : ''}`}
         />
-        
+
         {loadingMyGroups ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
@@ -253,34 +255,52 @@ export default function JoinGroup() {
           </div>
         ) : (
           <div className="space-y-3">
-            {myGroups.map((group) => (
-              <div
-                key={group.id}
-                className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100 hover:border-gray-200 transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center text-primary-700 font-bold">
-                    {group.name.charAt(0).toUpperCase()}
+            {myGroups.map((group) => {
+              // Co-Leaders and Leaders (owners) can view group details
+              const canViewDetails = group.role === 'owner' || group.role === 'leader';
+
+              return (
+                <div
+                  key={group.id}
+                  className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100 hover:border-gray-200 transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center text-primary-700 font-bold">
+                      {group.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">{group.name}</p>
+                      <Badge color={group.role === 'owner' ? 'purple' : group.role === 'leader' ? 'blue' : 'green'}>
+                        {group.role === 'owner' ? 'Leader' : group.role === 'leader' ? 'Co-Leader' : 'Member'}
+                      </Badge>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">{group.name}</p>
-                    <Badge color={group.role === 'leader' ? 'blue' : 'green'}>
-                      {group.role === 'leader' ? 'Leader' : 'Member'}
-                    </Badge>
+                  <div className="flex gap-2">
+                    {/* View Details Button - Only for Co-Leaders and Leaders */}
+                    {canViewDetails && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => navigate(`/member/group/${group.id}`)}
+                      >
+                        <Eye className="w-4 h-4 mr-1" />
+                        View Details
+                      </Button>
+                    )}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      loading={leaving === group.id}
+                      onClick={() => handleLeave(group.id)}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      <LogOut className="w-4 h-4 mr-1" />
+                      Leave
+                    </Button>
                   </div>
                 </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  loading={leaving === group.id}
-                  onClick={() => handleLeave(group.id)}
-                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                >
-                  <LogOut className="w-4 h-4 mr-1" />
-                  Leave
-                </Button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
@@ -394,7 +414,7 @@ export default function JoinGroup() {
             </div>
           )}
         </div>
-        
+
         {!searchQuery && (
           <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
             <p className="text-xs text-blue-700">

@@ -171,15 +171,16 @@ export default function App() {
         <Route path="dashboard" element={<MemberDashboard />} />
         <Route path="devotion" element={<MyDevotion />} />
         <Route path="group" element={<JoinGroup />} />
+        <Route path="group/:groupId" element={<GroupDetail />} />
         <Route path="messages" element={<Messages />} />
         <Route path="bible" element={<Bible />} />
       </Route>
 
-      {/* Protected Leader Routes */}
+      {/* Protected Leader Routes (also accessible to members who own groups) */}
       <Route
         path="leader"
         element={
-          <RequireAuth allowedRoles={['leader']}>
+          <RequireAuth allowedRoles={['leader', 'member']}>
             <DashboardLayout />
           </RequireAuth>
         }

@@ -4,6 +4,7 @@ import {
   Users,
   ArrowLeft,
   UserPlus,
+  Crown,
   Search,
   TrendingUp,
   CheckSquare,
@@ -20,6 +21,7 @@ import {
   addCoLeader,
   removeMember,
   getAvailableLeaders,
+  getUserRoleInGroup,
 } from '../services/groups.service';
 
 export default function GroupDetail() {
@@ -33,6 +35,7 @@ export default function GroupDetail() {
   const [groupMembers, setGroupMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [userRoleInGroup, setUserRoleInGroup] = useState('none');
 
   // Co-Leader Modal
   const [showAddLeaderModal, setShowAddLeaderModal] = useState(false);
@@ -61,10 +64,14 @@ export default function GroupDetail() {
   const [memberSearch, setMemberSearch] = useState('');
   const [devotionData, setDevotionData] = useState({});
 
-  // Check if current user is a leader of this group
-  const isLeader = groupMembers.some((m) => m.member_role === 'leader' && m.id === user?.id);
+  // Determine permissions
+  const isOwner = userRoleInGroup === 'owner';
+  const isCoLeader = userRoleInGroup === 'leader';
+  const isOwnerOrLeader = isOwner || isCoLeader;
+  const isMember = userRoleInGroup === 'member';
   const isAdmin = profile?.role === 'admin';
-  const canManageLeaders = isLeader || isAdmin;
+  // Only Owners can add/promote/demote Co-Leaders
+  const canManageCoLeaders = isOwner || isAdmin;
 
   // Helper to format dates using local time (not UTC) to avoid timezone shifts
   const formatDate = (date) => {
@@ -83,7 +90,12 @@ export default function GroupDetail() {
     try {
       console.log('Fetching data for group:', groupId);
 
-      // 1. Fetch group info
+      // 1. Fetch user's role in this group
+      const role = await getUserRoleInGroup(groupId, user.id);
+      setUserRoleInGroup(role);
+      console.log('User role in group:', role);
+
+      // 2. Fetch group info
       const { data: groupData, error: groupError } = await supabase
         .from('groups')
         .select('*')
@@ -444,7 +456,7 @@ export default function GroupDetail() {
       <div className="flex flex-row gap-2 ">
         <div className="flex items-center gap-4 mr-auto">
           <button
-            onClick={() => navigate('/leader/group')}
+            onClick={() => navigate(isMember ? '/member/group' : '/leader/group')}
             className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
           >
             <ArrowLeft className="w-5 h-5 text-gray-600" />
@@ -457,14 +469,18 @@ export default function GroupDetail() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" onClick={handleOpenAddMemberModal}>
-            <Users className="w-4 h-4 mr-2" />
-            Add Member
-          </Button>
-          {canManageLeaders && (
+          {/* Both Owners and Co-Leaders can add members */}
+          {isOwnerOrLeader && (
+            <Button variant="secondary" onClick={handleOpenAddMemberModal}>
+              <Users className="w-4 h-4 mr-2" />
+              Add Member
+            </Button>
+          )}
+          {/* Only Owners can add/promote Co-Leaders */}
+          {canManageCoLeaders && (
             <Button variant="secondary" onClick={handleOpenAddLeaderModal}>
-              <UserPlus className="w-4 h-4 mr-2" />
-              Add Leader
+              <Crown className="w-4 h-4 mr-2" />
+              Add Co-Leader
             </Button>
           )}
         </div>
@@ -684,7 +700,7 @@ export default function GroupDetail() {
       <Modal
         isOpen={showAddLeaderModal}
         onClose={() => setShowAddLeaderModal(false)}
-        title="Add Leader"
+        title="Add Co-Leader"
       >
         <div className="space-y-4">
           {/* Search Input */}

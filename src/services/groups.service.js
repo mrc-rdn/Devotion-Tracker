@@ -2,7 +2,7 @@ import { supabase } from '../lib/supabase';
 import { formatDateISO } from '../utils/formatDate';
 
 /**
- * Get all groups where the user is a leader
+ * Get all groups where the user is a leader (owner or co-leader)
  */
 export async function getLeaderGroups(userId) {
   if (!userId) return [];
@@ -10,6 +10,7 @@ export async function getLeaderGroups(userId) {
     .from('group_members')
     .select(`
       group_id,
+      role,
       joined_at,
       groups (
         id,
@@ -19,7 +20,7 @@ export async function getLeaderGroups(userId) {
       )
     `)
     .eq('user_id', userId)
-    .eq('role', 'leader')
+    .in('role', ['owner', 'leader'])
     .order('joined_at', { ascending: false });
 
   if (error) {
@@ -32,6 +33,7 @@ export async function getLeaderGroups(userId) {
     name: entry.groups.name,
     description: entry.groups.description,
     created_at: entry.groups.created_at,
+    role: entry.role,
     leader_since: entry.joined_at,
   }));
 }
@@ -128,9 +130,10 @@ export async function createGroup(name, description = '') {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
+  // Create group with owner_id
   const { data: group, error: groupError } = await supabase
     .from('groups')
-    .insert({ name, description })
+    .insert({ name, description, owner_id: user.id })
     .select()
     .single();
 
@@ -141,8 +144,16 @@ export async function createGroup(name, description = '') {
     throw new Error(groupError.message || 'Failed to create group');
   }
 
-  // Add creator as leader
-  await supabase.from('group_members').insert({ group_id: group.id, user_id: user.id, role: 'leader' });
+  // Add creator as OWNER (role='owner' is now allowed by the fix_owner_role.sql migration)
+  const { error: memberError } = await supabase
+    .from('group_members')
+    .insert({ group_id: group.id, user_id: user.id, role: 'owner' });
+
+  if (memberError) {
+    console.error('❌ Failed to add creator as owner:', memberError.message, memberError.details);
+    throw new Error(`Group created but failed to assign owner role: ${memberError.message}`);
+  }
+
   return group;
 }
 
@@ -188,6 +199,38 @@ export async function leaveGroup(groupId) {
     .eq('user_id', user.id);
 
   if (error) throw new Error(error.message || 'Failed to leave group');
+}
+
+/**
+ * Delete a group (owner only)
+ * This cascades and removes all members, devotions linked to the group
+ */
+export async function deleteGroup(groupId) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  // Verify the caller is the owner
+  const { data: groupData } = await supabase
+    .from('groups')
+    .select('owner_id')
+    .eq('id', groupId)
+    .single();
+
+  if (!groupData) {
+    throw new Error('Group not found');
+  }
+
+  if (groupData.owner_id !== user.id) {
+    throw new Error('Only the group owner can delete the group');
+  }
+
+  // Delete the group — CASCADE will remove group_members automatically
+  const { error } = await supabase
+    .from('groups')
+    .delete()
+    .eq('id', groupId);
+
+  if (error) throw new Error(error.message || 'Failed to delete group');
 }
 
 /**
@@ -256,24 +299,27 @@ export async function getGroupMembers(groupId) {
 }
 
 /**
- * Get group leaders for a group
+ * Get group leaders for a group (includes both owner and co-leaders)
  */
 export async function getGroupLeaders(groupId) {
-  // Reuse getGroupMembers and filter
   const members = await getGroupMembers(groupId);
-  return members.filter(m => m.member_role === 'leader');
+  return members.filter(m => m.member_role === 'owner' || m.member_role === 'leader');
 }
 
 /**
  * Add a co-leader to a group
+ * Only owners should call this
  */
 export async function addCoLeader(groupId, leaderId) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
   const { data, error } = await supabase
     .from('group_members')
     .upsert({
       group_id: groupId,
       user_id: leaderId,
-      role: 'leader',
+      role: 'leader', // Co-leader role
     }, { onConflict: 'group_id,user_id' })
     .select()
     .single();
@@ -283,6 +329,145 @@ export async function addCoLeader(groupId, leaderId) {
   }
 
   return data;
+}
+
+/**
+ * Promote a member to co-leader
+ */
+export async function promoteToCoLeader(groupId, userId) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { data, error } = await supabase.rpc('promote_to_co_leader', {
+    p_group_id: groupId,
+    p_user_id: userId,
+    p_caller_id: user.id,
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Failed to promote member');
+  }
+
+  if (!data.success) {
+    throw new Error(data.message || 'Failed to promote member');
+  }
+
+  return data;
+}
+
+/**
+ * Demote a leader to member
+ */
+export async function demoteFromLeader(groupId, userId) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { data, error } = await supabase.rpc('demote_from_leader', {
+    p_group_id: groupId,
+    p_user_id: userId,
+    p_caller_id: user.id,
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Failed to demote member');
+  }
+
+  if (!data.success) {
+    throw new Error(data.message || 'Failed to demote member');
+  }
+
+  return data;
+}
+
+/**
+ * Get user's role in a specific group
+ */
+export async function getUserRoleInGroup(groupId, userId) {
+  const { data, error } = await supabase.rpc('get_user_role_in_group', {
+    p_group_id: groupId,
+    p_user_id: userId,
+  });
+
+  if (error) {
+    console.error('Failed to get user role:', error.message);
+    return 'none';
+  }
+
+  return data || 'none';
+}
+
+/**
+ * Check if user can promote in a group
+ */
+export async function canPromoteInGroup(groupId, userId) {
+  const { data, error } = await supabase.rpc('can_promote_in_group', {
+    p_group_id: groupId,
+    p_user_id: userId,
+  });
+
+  if (error) {
+    console.error('Failed to check promotion permission:', error.message);
+    return false;
+  }
+
+  return data || false;
+}
+
+/**
+ * Get group info including owner
+ */
+export async function getGroupInfo(groupId) {
+  const { data, error } = await supabase
+    .from('groups')
+    .select('*')
+    .eq('id', groupId)
+    .single();
+
+  if (error) {
+    console.error('Failed to fetch group info:', error.message);
+    return null;
+  }
+
+  return data;
+}
+
+/**
+ * Get all groups where user is a member (any role)
+ */
+export async function getUserGroupMemberships(userId) {
+  if (!userId) return [];
+  
+  const { data, error } = await supabase
+    .from('group_members')
+    .select(`
+      group_id,
+      role,
+      joined_at,
+      groups (
+        id,
+        name,
+        description,
+        created_at,
+        owner_id
+      )
+    `)
+    .eq('user_id', userId)
+    .order('joined_at', { ascending: false });
+
+  if (error) {
+    console.error('Failed to fetch user group memberships:', error.message);
+    return [];
+  }
+
+  return (data || []).map((entry) => ({
+    id: entry.groups.id,
+    name: entry.groups.name,
+    description: entry.groups.description,
+    created_at: entry.groups.created_at,
+    owner_id: entry.groups.owner_id,
+    role: entry.role,
+    joined_at: entry.joined_at,
+  }));
 }
 
 /**

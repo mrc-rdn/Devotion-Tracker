@@ -37,81 +37,70 @@ export default function Login({ supabaseError, onRetry }) {
   }
 
   return (
-    
-      <div className="w-full h-screen flex flex-col md:flex-row bg-white shadow-2xl rounded-sm overflow-hidden border border-gray-100">
-        
-        {/* Left Side: Brand/Visual (Inspired by Slide 1) */}
-        <div className="hidden md:flex md:w-5/12 bg-[#1a365d] relative p-12 flex-col justify-between text-white">
+
+      <div className="h-full w-full flex flex-col md:flex-row bg-white shadow-2xl rounded-sm overflow-hidden border border-gray-100">
+
+        {/* Left Side: Liturgical Branding */}
+        <div className="hidden md:flex md:w-2/5 bg-[#1a365d] relative p-12 flex-col justify-between text-white">
           <div className="z-10">
-            <div className="flex items-center gap-2 mb-8">
-              <div className="bg-white/20 p-2 rounded">
-                <LogIn className="w-5 h-5 text-white" />
-              </div>
-              <span className="tracking-[0.2em] uppercase text-sm font-bold">Devotion Tracker</span>
+            <div className="flex items-center gap-2 mb-12">
+              <LogIn className="w-5 h-5 text-blue-300" />
+              <span className="tracking-[0.3em] uppercase text-[10px] font-bold">Devotion Tracker</span>
             </div>
-            <h1 className="text-5xl font-extrabold leading-tight tracking-tight uppercase">
-              Prayer <br /> Gathering
+            <h1 className="text-4xl font-extrabold leading-tight tracking-tighter uppercase">
+              Welcome <br /> Back
             </h1>
-            <div className="w-20 h-1 bg-white mt-6 mb-6"></div>
-            <p className="text-blue-100/80 leading-relaxed max-w-xs">
-              Continue your journey of reflection and spiritual growth.
-            </p>
+            <div className="w-16 h-1 bg-white/30 mt-6"></div>
           </div>
-          
-          {/* Decorative Chevrons from Slides */}
-          <div className="absolute bottom-10 right-10 flex gap-1 opacity-40">
-            <ChevronRight className="w-8 h-8" />
-            <ChevronRight className="w-8 h-8 -ml-4" />
-            <ChevronRight className="w-8 h-8 -ml-4" />
+
+          <div className="z-10 italic text-blue-100/60 text-sm leading-relaxed">
+            "Let us not grow weary in doing good, for at the proper time we will reap a harvest."
           </div>
-          
-          {/* Background Overlay Image (Simulated) */}
-          <div className="absolute inset-0 opacity-20 grayscale bg-[url('https://images.unsplash.com/photo-1515023115689-589c39715ee1?auto=format&fit=crop&q=80')] bg-cover bg-center"></div>
+
+          {/* Decorative Elements from Slides */}
+          <div className="absolute top-0 right-0 p-8 opacity-10">
+            {[...Array(3)].map((_, i) => (
+              <ChevronRight key={i} className="w-12 h-12 -mt-6" style={{ transform: 'rotate(90deg)' }} />
+            ))}
+          </div>
+
+          <div className="absolute inset-0 opacity-15 grayscale bg-[url('https://images.unsplash.com/photo-1438232992991-995b7058bbb3?auto=format&fit=crop&q=80')] bg-cover bg-center"></div>
         </div>
 
-        {/* Right Side: Form (Inspired by Slide 2/Overview) */}
-        <div className="w-full  md:w-1/2 p-8 md:p-16 flex flex-col justify-center mx-auto relative">
-          <div className="mb-10 flex items-center flex-col">
-            <h2 className="text-3xl font-bold text-slate-800 uppercase tracking-wide">Welcome Back</h2>
-            <div className="flex items-center gap-2 mb-8 mt-8">
-              <div className="bg-[#1a365d] p-2 rounded">
-                <LogIn className="w-5 h-5 text-white" />
-              </div>
-              <span className="tracking-[0.2em] uppercase text-sm font-bold">Devotion Tracker</span>
-            </div>
-            <div className="flex items-center gap-2 text-slate-400 mt-2">
-              <span className="text-xs uppercase tracking-widest font-semibold">Sign in to continue</span>
-              <div className="flex-grow h-[1px] bg-gray-100"></div>
-            </div>
+        {/* Right Side: Login Form */}
+        <div className="w-full md:w-3/5 p-8 md:p-12">
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold text-slate-800 uppercase tracking-widest">Sign In</h2>
+            <p className="text-xs text-slate-400 mt-2 uppercase tracking-tight">Continue your devotion journey</p>
           </div>
 
           {error && (
-            <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 flex items-center gap-3">
-              <AlertCircle className="w-5 h-5 text-red-500" />
-              <p className="text-sm text-red-800 font-medium">{error}</p>
+            <div className="mb-6 p-3 bg-red-50 border-l-4 border-red-500 flex items-center gap-2 text-red-700 text-sm">
+              <AlertCircle className="w-4 h-4" /> {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            <div className="relative">
-              <label className="block text-[10px] uppercase tracking-[0.2em] font-bold text-slate-500 mb-1">Email Address</label>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Email Address</label>
               <input
+                type="email"
                 {...register('email')}
-                className={`w-full px-0 py-3 border-b-2 bg-transparent focus:outline-none transition-colors duration-300 ${
-                  errors.email ? 'border-red-400' : 'border-slate-200 focus:border-[#1a365d]'
+                className={`w-full border-b-2 py-2 focus:outline-none transition-colors ${
+                  errors.email ? 'border-red-300' : 'border-slate-100 focus:border-[#1a365d]'
                 }`}
                 placeholder="you@domain.com"
               />
               {errors.email && <p className="text-[11px] text-red-500 mt-1 font-semibold">{errors.email.message}</p>}
             </div>
 
-            <div className="relative">
-              <label className="block text-[10px] uppercase tracking-[0.2em] font-bold text-slate-500 mb-1">Password</label>
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Password</label>
               <input
                 type="password"
                 {...register('password')}
-                className={`w-full px-0 py-3 border-b-2 bg-transparent focus:outline-none transition-colors duration-300 ${
-                  errors.password ? 'border-red-400' : 'border-slate-200 focus:border-[#1a365d]'
+                className={`w-full border-b-2 py-2 focus:outline-none transition-colors ${
+                  errors.password ? 'border-red-300' : 'border-slate-100 focus:border-[#1a365d]'
                 }`}
                 placeholder="••••••••"
               />
@@ -119,26 +108,20 @@ export default function Login({ supabaseError, onRetry }) {
             </div>
 
             <button
+              type="submit"
               disabled={submitting}
-              className="w-full mt-4 bg-[#1a365d] hover:bg-[#2a4a7d] text-white py-4 px-6 font-bold uppercase tracking-widest text-sm flex items-center justify-center transition-all group"
+              className="w-full bg-[#1a365d] hover:bg-[#2a4a7d] text-white py-4 mt-4 font-bold uppercase tracking-[0.2em] text-xs transition-all shadow-lg active:scale-[0.98]"
             >
-              {submitting ? 'Authenticating...' : (
-                <>
-                  Sign In 
-                  <ChevronRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-                </>
-              )}
+              {submitting ? 'Authenticating...' : 'Sign In'}
             </button>
           </form>
 
-          <p className="mt-10 text-center text-xs text-slate-400 uppercase tracking-widest">
+          <p className="mt-8 text-center text-[11px] text-slate-400 uppercase tracking-widest">
             New here?{' '}
-            <Link to="/signup" className="text-[#1a365d] font-bold hover:underline">
-              Create Account
-            </Link>
+            <Link to="/signup" className="text-[#1a365d] font-bold hover:underline ml-1">Create Account</Link>
           </p>
         </div>
       </div>
-    
+
   );
 }

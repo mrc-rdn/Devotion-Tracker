@@ -123,7 +123,7 @@ async function uploadDevotionImage(userId, file) {
 export async function getDevotionsByRange(userId, startDate, endDate) {
   const { data, error } = await supabase
     .from('devotions')
-    .select('id, devotion_date, image_url, notes, content, created_at')
+    .select('id, devotion_date, image_url, notes, created_at')
     .eq('user_id', userId)
     .gte('devotion_date', formatDateISO(startDate))
     .lte('devotion_date', formatDateISO(endDate))
@@ -187,7 +187,7 @@ export async function getGroupDevotions(groupId, startDate, endDate) {
 
   const { data, error } = await supabase
     .from('devotions')
-    .select('id, user_id, devotion_date, image_url, notes, content, created_at')
+    .select('id, user_id, devotion_date, image_url, notes, created_at')
     .in('user_id', userIds)
     .gte('devotion_date', formatDateISO(startDate))
     .lte('devotion_date', formatDateISO(endDate))
