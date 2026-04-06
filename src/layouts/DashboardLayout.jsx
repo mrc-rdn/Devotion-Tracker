@@ -70,7 +70,7 @@ export default function DashboardLayout() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs uppercase tracking-widest font-bold text-white truncate">
-                  {profile?.firstName} {profile?.lastName}
+                  {profile?.first_name} {profile?.last_name}
                 </p>
                 <span className={`inline-block mt-1 px-2 py-0.5 border text-xs uppercase font-black tracking-tighter rounded-sm ${getRoleBadgeStyle(profile?.role)}`}>
                   {ROLE_LABELS[profile?.role] || 'User'}
@@ -134,9 +134,21 @@ export default function DashboardLayout() {
              </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Live Connection</span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-[#1a365d] text-white rounded-full flex items-center justify-center font-bold text-sm shadow-inner">
+                {profile?.first_name?.[0]}{profile?.last_name?.[0]}
+              </div>
+              <div className="hidden sm:block">
+                <p className="text-sm font-bold text-slate-800">{profile?.first_name} {profile?.last_name}</p>
+                <p className="text-xs text-slate-500">{profile?.email}</p>
+              </div>
+            </div>
+            <div className="w-px h-8 bg-slate-200 hidden sm:block" />
+            <div className="hidden sm:flex items-center gap-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Live Connection</span>
+            </div>
           </div>
         </header>
 
@@ -158,8 +170,7 @@ function getNavItems(role) {
   ];
 
   if (role === 'member') {
-    baseItems.push({ href: '/member/group', icon: UserPlus, label: 'Join Group' });
-    baseItems.push({ href: '/leader/group', icon: FolderPlus, label: 'Manage My Groups' });
+    baseItems.push({ href: '/member/group', icon: Users, label: 'My Groups' });
   } else if (role === 'leader') {
     baseItems.push({ href: '/leader/group', icon: FolderPlus, label: 'My Group' });
   }

@@ -170,8 +170,7 @@ export default function App() {
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<MemberDashboard />} />
         <Route path="devotion" element={<MyDevotion />} />
-        <Route path="group" element={<JoinGroup />} />
-        <Route path="group/:groupId" element={<GroupDetail />} />
+        <Route path="group" element={<ManageGroup />} />
         <Route path="messages" element={<Messages />} />
         <Route path="bible" element={<Bible />} />
       </Route>
